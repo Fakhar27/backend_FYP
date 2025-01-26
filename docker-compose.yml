@@ -1,0 +1,28 @@
+
+services:
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=genAI
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=Fakhar27
+    ports:
+      - "5432:5432"
+
+  web:
+    build: ./backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:Fakhar27@db:5432/genAI
+      - DEBUG=1
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

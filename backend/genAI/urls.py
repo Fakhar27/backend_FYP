@@ -16,16 +16,3 @@ urlpatterns = [
     # path('generate-image/', views.generate_image, name='generate_image'),
     path('update-ngrok-url/',views.update_ngrok_url,name='update_ngrok_url')
 ]
-
-
-# from rest_framework_simplejwt.views import (
-#     TokenRefreshView,
-# )
-
-
-# urlpatterns = [
-#     path("", views.get_routes, name="get_routes"),
-#     path('token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-#     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-#     path("list/", views.getUSERS, name="get_users"),
-# ]

@@ -1,45 +1,102 @@
-from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
-import os
-from dotenv import load_dotenv
+from langchain_cohere import ChatCohere
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_cohere.react_multi_hop.parsing import parse_answer_with_prefixes
+import asyncio
+from typing import Optional, Dict
 
-def test_langchain():
-    try:
-        # Test imports
-        print("✓ Basic imports successful")
+class StoryIterationChain:
+    def __init__(self, cohere_api_key):
+        self.llm = ChatCohere(
+            cohere_api_key=cohere_api_key,
+            temperature=0.5,
+            max_tokens=150  
+        )
         
-        # Test prompt template
-        prompt = PromptTemplate.from_template("Tell me a joke about {topic}")
-        print("✓ PromptTemplate created successfully")
+        self.prefixes = {
+            "story": "story:",
+            "image": "image:"
+        }
         
-        # Test environment
-        load_dotenv()  # Load environment variables from .env file
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key:
-            print("✓ OpenAI API key found in environment")
+        self.base_prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are generating very short story segments and image descriptions.
+            Format your response exactly as:
+            story: [one sentence story]
+            image: [detailed visual description]
             
-            # Test actual API call
-            llm = ChatOpenAI()
-            result = llm.invoke("Say hello!")
-            print("✓ Successfully made API call to OpenAI")
-            print(f"\nAPI Response: {result.content}")
-        else:
-            print("\n⚠ OpenAI API key not found. Please check:")
-            print("1. Does .env file exist in the current directory?")
-            print("2. Does it contain OPENAI_API_KEY=sk-...?")
-            print("3. Current directory:", os.getcwd())
-            print("4. Environment variables loaded:", dict(os.environ))
+            Requirements:
+            - Keep story extremely brief (one sentence)
+            - Make image descriptions specific and visual
+            - Use exactly the format shown above"""),
+            ("human", "{input_prompt}")
+        ])
         
-        return True
+        self.continuation_prompt = ChatPromptTemplate.from_messages([
+            ("system", """Continue this short story:
+            Previous: {previous_story}
+            
+            Format your response exactly as:
+            story: [one sentence continuation]
+            image: [detailed visual description]
+            
+            Requirements:
+            - Write only 1 sentence continuing the story
+            - Keep image descriptions focused and specific
+            - Use exactly the format shown above"""),
+            ("human", "Continue the story.")
+        ])
+
+    async def generate_iteration(self, input_text: str, previous_content: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        try:
+            if previous_content is None:
+                response = await self.llm.ainvoke(
+                    self.base_prompt.format_prompt(input_prompt=input_text).to_messages()
+                )
+            else:
+                response = await self.llm.ainvoke(
+                    self.continuation_prompt.format_prompt(
+                        previous_story=previous_content["story"]
+                    ).to_messages()
+                )
+            
+            # print(f"Raw response:\n{response.content}\n")
+            
+            parsed_content = parse_answer_with_prefixes(response.content, self.prefixes)
+            
+            # print(f"Parsed content:\n{parsed_content}\n")
+            
+            return parsed_content
+            
+        except Exception as e:
+            print(f"Error in generation: {str(e)}")
+            return {
+                "story": "Error occurred in story generation.",
+                "image": "Error occurred in image description."
+            }
+
+    async def generate_full_story(self, initial_prompt: str, iterations: int = 4) -> list[Dict[str, str]]:
+        results = []
+        previous_content = None
         
-    except Exception as e:
-        print(f"\n⚠ Error occurred: {str(e)}")
-        if "api_key" in str(e).lower():
-            print("\nAPI Key Error Tips:")
-            print("1. Create a .env file in:", os.getcwd())
-            print("2. Add this line: OPENAI_API_KEY=sk-your-key-here")
-            print("3. Make sure the key starts with 'sk-'")
-        return False
+        for i in range(iterations):
+            iteration_result = await self.generate_iteration(
+                initial_prompt if i == 0 else "", 
+                previous_content
+            )
+            results.append(iteration_result)
+            previous_content = iteration_result
+            
+        return results
+
+async def main():
+    story_chain = StoryIterationChain(cohere_api_key="SDVrZC6I4V4yEVnzdc53Fo7yT2iJDhmjmbsUSEhh")
+    
+    initial_prompt = "a man inside a jungle"
+    story_iterations = await story_chain.generate_full_story(initial_prompt)
+    
+    for i, iteration in enumerate(story_iterations, 1):
+        print(f"\nIteration {i}:")
+        print(f"Story: {iteration['story']}")
+        print(f"Image: {iteration['image']}")
 
 if __name__ == "__main__":
-    test_langchain()
+    asyncio.run(main())

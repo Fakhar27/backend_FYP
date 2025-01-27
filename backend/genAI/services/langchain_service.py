@@ -1,114 +1,119 @@
-from typing import List, Dict, Any, Optional
-import logging
-import aiohttp
-from langchain_openai import ChatOpenAI
+from langchain_cohere import ChatCohere
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_cohere.react_multi_hop.parsing import parse_answer_with_prefixes
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.outputs import LLMResult
+from langsmith import Client
+from langsmith.run_helpers import traceable, trace
+import asyncio
+import aiohttp
+import os
+import logging
+from typing import Optional, Dict, Any, List
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-import json
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+
 class ContentRequest(BaseModel):
+    """Request model for story generation"""
     prompt: str = Field(..., description="User's content prompt")
     genre: str = Field(..., description="Content category/genre")
     iterations: int = Field(default=4, ge=1, le=10)
 
 class ContentResponse(BaseModel):
+    """Response model for each story iteration"""
     story: str
-    enhanced_story: str
+    image_description: str
     image_url: Optional[str]
     iteration: int
 
-class LangChainService:
-    def __init__(
-        self,
-        openai_api_key: str,
-        colab_url: str,
-        model_name: str = "gpt-4o-mini",
-        temperature: float = 0.7
-    ):
-        # Story LLM with strict token limit
-        self.story_llm = ChatOpenAI(
-            model_name=model_name,
-            temperature=temperature,
-            openai_api_key=openai_api_key,
-            max_tokens=25  # Strict limit for one-sentence stories
+class TokenUsageCallback(BaseCallbackHandler):
+    """Callback handler to track token usage."""
+    def __init__(self):
+        super().__init__()
+        self.total_tokens = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.successful_requests = 0
+        self.failed_requests = 0
+
+    def on_llm_start(self, *args, **kwargs) -> None:
+        """Called when LLM starts processing."""
+        pass
+
+    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        """Called when LLM ends processing."""
+        if response.llm_output and "token_usage" in response.llm_output:
+            usage = response.llm_output["token_usage"]
+            self.total_tokens += usage.get("total_tokens", 0)
+            self.prompt_tokens += usage.get("prompt_tokens", 0)
+            self.completion_tokens += usage.get("completion_tokens", 0)
+            self.successful_requests += 1
+            logger.info(f"Token usage updated - Total: {self.total_tokens}")
+
+    def on_llm_error(self, error: Exception, **kwargs: Any) -> None:
+        """Called when LLM errors during processing."""
+        self.failed_requests += 1
+        logger.error(f"LLM error occurred: {str(error)}")
+
+class StoryIterationChain:
+    def __init__(self, colab_url: Optional[str] = None):
+        self.token_callback = TokenUsageCallback()
+        self.client = Client()
+        
+        self.llm = ChatCohere(
+            cohere_api_key=os.getenv("CO_API_KEY"),
+            temperature=0.7,
+            max_tokens=150,
+            callbacks=[self.token_callback]
         )
         
-        # Image prompt LLM without token limit
-        self.image_llm = ChatOpenAI(
-            model_name=model_name,
-            temperature=temperature,
-            openai_api_key=openai_api_key,
-            max_tokens=200  # Allow detailed image prompts
-        )
-        
-        self.colab_url = colab_url
+        self.colab_url = colab_url or os.getenv("COLAB_URL")
         self._session = None
         self._session_refs = 0
         
-        # Story generation prompt with strict length control and continuity
-        self.story_prompt = ChatPromptTemplate.from_messages([
-            ("system", 
-             """You are a cinematic storyteller creating a suspenseful narrative.
-             Generate EXACTLY ONE SENTENCE (max 15-20 words) that:
-             1. Continues directly from the previous scene
-             2. Focuses on one clear, dramatic moment or action
-             3. Uses vivid, visual language
-             4. Maintains tension and atmosphere
-             
-             STRICT RULES:
-             - ONE sentence only
-             - Maximum 20 words
-             - Must be immediately filmable
-             - Focus on visual action and mood"""),
-            ("human", 
-             """Create the next scene in this {genre} story about: {prompt}
-             Previous scene: {context}
-             
-             Remember:
-             - ONE dramatic sentence
-             - Direct continuation
-             - Clear visual action
-             - Maximum 20 words""")
+        self.prefixes = {
+            "story": "story:",
+            "image": "image:"
+        }
+        
+        self.base_prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are generating very short story segments and image descriptions 
+            in the {genre} genre.
+            
+            Format your response exactly as:
+            story: [one sentence story]
+            image: [detailed visual description]
+            
+            Requirements:
+            - Keep story extremely brief (one sentence)
+            - Make image descriptions specific and visual
+            - Match the {genre} genre style and themes
+            - Use exactly the format shown above"""),
+            ("human", "{input_prompt}")
         ])
         
-        # Detailed image prompt template
-        self.image_prompt = ChatPromptTemplate.from_messages([
-            ("system", 
-             """You are a master of cinematic image composition. Create detailed Stable Diffusion prompts that:
-             1. Maintain perfect visual continuity with previous scenes
-             2. Specify exact lighting, colors, and atmosphere
-             3. Include technical camera details and composition
-             4. Describe environment with rich detail
-             
-             Critical elements to maintain:
-             - Character appearance and positioning
-             - Time of day and weather conditions
-             - Color palette and lighting style
-             - Environmental details and props
-             - Camera angle and framing
-             
-             Use format: [Scene Description], [Atmosphere], [Technical Details], [Style Keywords]"""),
-            ("human", 
-             """Create a highly detailed image prompt that maintains perfect visual continuity.
-             
-             Story context: {context}
-             Previous scene details: {prev_context}
-             
-             Required elements:
-             1. Precise character and prop descriptions
-             2. Exact lighting and atmosphere details
-             3. Specific camera angles and framing
-             4. Style keywords (cinematic, dramatic, professional)
-             5. Technical specifications for consistent look
-             
-             Make the description detailed enough for perfect visual matching.""")
+        self.continuation_prompt = ChatPromptTemplate.from_messages([
+            ("system", """Continue this {genre} story:
+            Previous: {previous_story}
+            
+            Format your response exactly as:
+            story: [one sentence continuation]
+            image: [detailed visual description]
+            
+            Requirements:
+            - Write only 1 sentence continuing the story
+            - Keep image descriptions focused and specific
+            - Match the {genre} genre style and themes
+            - Use exactly the format shown above"""),
+            ("human", "Continue the story.")
         ])
 
-    async def session(self):
-        """Async property to manage session lifecycle"""
+    async def get_session(self):
+        """Get or create aiohttp session"""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
             self._session_refs = 0
@@ -116,128 +121,154 @@ class LangChainService:
         return self._session
 
     async def _release_session(self):
-        """Safely release session reference"""
+        """Release session reference"""
         if self._session is None:
             return
-            
         self._session_refs -= 1
         if self._session_refs <= 0 and not self._session.closed:
             await self._session.close()
             self._session = None
 
-    async def generate_story(self, prompt: str, genre: str, context: str = "") -> str:
-        """Generate concise, one-sentence story"""
+    @traceable(run_type="chain")
+    async def generate_iteration(self, input_text: str, genre: str, previous_content: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        """Generate a single story iteration."""
         try:
-            story_chain = self.story_prompt | self.story_llm | StrOutputParser()
-            response = await story_chain.ainvoke({
-                "genre": genre,
-                "prompt": prompt,
-                "context": context or "Initial scene"
-            })
-            logger.info(f"Generated story: {response}")
-            return response
+            with trace(
+                name="Story Generation Step",
+                run_type="llm",
+                project_name=os.getenv("LANGSMITH_PROJECT")
+            ) as run:
+                if previous_content is None:
+                    prompt = self.base_prompt.format_prompt(
+                        input_prompt=input_text,
+                        genre=genre
+                    )
+                else:
+                    prompt = self.continuation_prompt.format_prompt(
+                        previous_story=previous_content["story"],
+                        genre=genre
+                    )
+                
+                response = await self.llm.ainvoke(
+                    prompt.to_messages()
+                )
+                
+                parsed_content = parse_answer_with_prefixes(response.content, self.prefixes)
+                
+                # Add run metadata
+                run.add_metadata({
+                    "token_usage": {
+                        "total_tokens": self.token_callback.total_tokens,
+                        "prompt_tokens": self.token_callback.prompt_tokens,
+                        "completion_tokens": self.token_callback.completion_tokens
+                    },
+                    "request_stats": {
+                        "successful": self.token_callback.successful_requests,
+                        "failed": self.token_callback.failed_requests
+                    }
+                })
+                
+                return parsed_content
+                
         except Exception as e:
-            logger.error(f"Story generation failed: {str(e)}")
-            raise
-
-    async def enhance_story(self, context: str, prev_context: str = "") -> str:
-        """Convert story into detailed image generation prompt"""
-        try:
-            image_chain = self.image_prompt | self.image_llm | StrOutputParser()
-            response = await image_chain.ainvoke({
-                "context": context,
-                "prev_context": prev_context
-            })
-            logger.info(f"Enhanced story for image generation: {response}")
-            return response
-        except Exception as e:
-            logger.error(f"Story enhancement failed: {str(e)}")
-            raise
+            logger.error(f"Error in generation: {str(e)}")
+            return {
+                "story": "Error occurred in story generation.",
+                "image": "Error occurred in image description."
+            }
 
     async def generate_image(self, prompt: str) -> Optional[str]:
-        """Generate image with proper session handling"""
+        """Generate image using Stable Diffusion API with retries"""
         if not self.colab_url:
             logger.error("COLAB_URL not set")
             return None
             
-        try:
-            session = await self.session()
-            logger.info(f"Sending image generation request to: {self.colab_url}/generate-image")
-            logger.info(f"With prompt: {prompt}")
-            
-            async with session.post(
-                f"{self.colab_url}/generate-image",
-                json={"prompt": prompt},
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as response:
-                response.raise_for_status()
-                result = await response.json()
+        retries = 3
+        for attempt in range(retries):
+            try:
+                session = await self.get_session()
+                logger.info(f"Sending image generation request with prompt: {prompt}")
                 
-                if 'error' in result:
-                    logger.error(f"Error from image generation: {result['error']}")
-                    return None
+                async with session.post(
+                    f"{self.colab_url}/generate-image",
+                    json={"prompt": prompt},
+                    timeout=aiohttp.ClientTimeout(total=60)
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
                     
-                image_data = result.get('image_data')
-                if not image_data:
-                    logger.error("No image data in response")
-                    return None
+                    if 'error' in result:
+                        logger.error(f"Error from image generation: {result['error']}")
+                        if attempt < retries - 1:
+                            await asyncio.sleep(1)  # Wait before retry
+                            continue
+                        return None
+                        
+                    image_data = result.get('image_data')
+                    if not image_data:
+                        logger.error("No image data in response")
+                        if attempt < retries - 1:
+                            await asyncio.sleep(1)
+                            continue
+                        return None
+                    
+                    logger.info("Image generated successfully")
+                    return image_data
+                    
+            except Exception as e:
+                logger.error(f"Image generation failed (attempt {attempt + 1}/{retries}): {str(e)}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return None
+            finally:
+                await self._release_session()
                 
-                logger.info("Image data successfully received")
-                return image_data
-                
-        except Exception as e:
-            logger.error(f"Image generation failed: {str(e)}")
-            return None
-        finally:
-            await self._release_session()
+        return None
 
-    async def generate_content_pipeline(
-        self,
-        request: ContentRequest
-    ) -> List[ContentResponse]:
-        """Main content generation pipeline with improved coherence"""
-        results = []
-        context = ""
-        prev_enhanced_story = ""
-
-        try:
+    @traceable(run_type="chain")
+    async def generate_content_pipeline(self, request: ContentRequest) -> List[ContentResponse]:
+        """Generate complete story with images based on ContentRequest."""
+        with trace(
+            name="Full Story Generation",
+            run_type="chain",
+            project_name=os.getenv("LANGSMITH_PROJECT")
+        ) as run:
+            results = []
+            previous_content = None
+            
             for i in range(request.iterations):
                 logger.info(f"Starting iteration {i + 1}")
                 
-                # Generate coherent story continuation
-                story = await self.generate_story(
-                    prompt=request.prompt,
+                iteration_result = await self.generate_iteration(
+                    input_text=request.prompt if i == 0 else "", 
                     genre=request.genre,
-                    context=context
+                    previous_content=previous_content
                 )
                 
-                # Create detailed image prompt with visual consistency
-                enhanced_story = await self.enhance_story(
-                    story,
-                    prev_enhanced_story
-                )
-                
-                # Generate matching image
-                image_url = await self.generate_image(enhanced_story)
-                
-                result = ContentResponse(
-                    story=story,
-                    enhanced_story=enhanced_story,
+                image_url = await self.generate_image(iteration_result["image"])
+                response = ContentResponse(
+                    story=iteration_result["story"],
+                    image_description=iteration_result["image"],
                     image_url=image_url,
                     iteration=i + 1
                 )
                 
-                results.append(result)
-                context = story
-                prev_enhanced_story = enhanced_story
+                results.append(response)
+                previous_content = iteration_result
+                
+                run.add_metadata({
+                    f"iteration_{i+1}": {
+                        "story": iteration_result["story"],
+                        "image_description": iteration_result["image"],
+                        "image_url": image_url,
+                        "genre": request.genre
+                    }
+                })
                 
                 logger.info(f"Completed iteration {i + 1}")
-                
-            return results
             
-        except Exception as e:
-            logger.error(f"Pipeline execution failed: {str(e)}")
-            raise
+            return results
 
     async def cleanup(self):
         """Cleanup resources"""
@@ -249,7 +280,6 @@ class LangChainService:
     def __del__(self):
         """Ensure cleanup on deletion"""
         if self._session and not self._session.closed:
-            import asyncio
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():

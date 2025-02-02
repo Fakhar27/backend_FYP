@@ -63,6 +63,22 @@ def update_ngrok_url(request):
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
     
+@csrf_exempt
+def update_ngrok_url_voice(request):
+    """Endpoint for Colab to register its URL"""
+    global COLAB_URL
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            ngrok_url = data.get('ngrok_url')
+            if ngrok_url:
+                COLAB_URL = ngrok_url
+                return JsonResponse({"message": "URL updated successfully"})
+            return JsonResponse({"error": "No URL provided"}, status=400)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+    return JsonResponse({"error": "Invalid method"}, status=405)
+    
 langchain_service = None
 story_chain_service = None
 
@@ -205,6 +221,47 @@ def get_metrics(request):
             return JsonResponse({"error": str(e)}, status=500)
             
     return JsonResponse({"error": "Invalid request method"}, status=405)
+
+
+@csrf_exempt
+def generate_voice(request):
+    """Handle voice generation requests"""
+    global COLAB_URL
+    if request.method == 'POST':
+        try:
+            if not COLAB_URL:
+                return JsonResponse({"error": "Colab service not available"}, status=503)
+
+            data = json.loads(request.body)
+            text = data.get('text')
+            
+            if not text:
+                return JsonResponse({"error": "Text is required"}, status=400)
+
+            response = requests.post(
+                f"{COLAB_URL}/generate-speech",
+                json={"text": text},
+                timeout=90
+            )
+            
+            if response.status_code == 200:
+                return JsonResponse(response.json())
+            else:
+                return JsonResponse(
+                    {"error": "Failed to generate audio"}, 
+                    status=response.status_code
+                )
+
+        except requests.exceptions.RequestException as e:
+            return JsonResponse(
+                {"error": f"Failed to connect to Colab service: {str(e)}"}, 
+                status=503
+            )
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Invalid method"}, status=405)
+        
 
 
 # ---------------------- AUTH AND USER MANAGEMENT ----------------------

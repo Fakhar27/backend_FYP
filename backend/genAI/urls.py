@@ -14,5 +14,7 @@ urlpatterns = [
     path('generate-content/',views.generate_content,name="generate_content"),
     # path('generate-voice/',views.generate_voice,name="generate_voice"),
     # path('generate-image/', views.generate_image, name='generate_image'),
-    path('update-ngrok-url/',views.update_ngrok_url,name='update_ngrok_url')
+    path('update-ngrok-url/',views.update_ngrok_url,name='update_ngrok_url'),
+    path('generate-voice/',views.generate_voice,name="generate_voice"),
+    path('update-ngrok-url2/', views.update_ngrok_url_voice, name='update_ngrok_url'),
 ]

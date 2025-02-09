@@ -36,6 +36,7 @@ co = cohere.Client(os.getenv("CO_API_KEY"))
 # API_URL = "https://api-inference.huggingface.co/models/Lykon/DreamShaper"
 # headers = {"Authorization": "Bearer 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"}
 COLAB_URL = "https://87c7-35-185-226-172.ngrok-free.app"
+COLAB_URL_2 = ""
 # OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 # if not OPENAI_API_KEY:
 #     logger.warning("OPENAI_API_KEY environment variable not set")
@@ -66,13 +67,13 @@ def update_ngrok_url(request):
 @csrf_exempt
 def update_ngrok_url_voice(request):
     """Endpoint for Colab to register its URL"""
-    global COLAB_URL
+    global COLAB_URL_2
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             ngrok_url = data.get('ngrok_url')
             if ngrok_url:
-                COLAB_URL = ngrok_url
+                COLAB_URL_2 = ngrok_url
                 return JsonResponse({"message": "URL updated successfully"})
             return JsonResponse({"error": "No URL provided"}, status=400)
         except json.JSONDecodeError:
@@ -82,34 +83,150 @@ def update_ngrok_url_voice(request):
 langchain_service = None
 story_chain_service = None
 
+# def get_story_chain_service():
+#     """Get or create StoryIterationChain service with current COLAB_URL"""
+#     global story_chain_service, COLAB_URL
+    
+#     logger.info(f"Initializing StoryIterationChain service with COLAB_URL: {COLAB_URL}")
+    
+#     if story_chain_service is None or story_chain_service.colab_url != COLAB_URL:
+#         try:
+#             logger.info("Creating new StoryIterationChain instance")
+#             story_chain_service = StoryIterationChain(colab_url=COLAB_URL)
+#             logger.info("StoryIterationChain service created successfully")
+#         except Exception as e:
+#             logger.error(f"Error creating StoryIterationChain service: {str(e)}")
+#             raise
+
+#     return story_chain_service
+
 def get_story_chain_service():
-    """Get or create StoryIterationChain service with current COLAB_URL"""
-    global story_chain_service, COLAB_URL
+    global story_chain_service, COLAB_URL, COLAB_URL_2
     
-    logger.info(f"Initializing StoryIterationChain service with COLAB_URL: {COLAB_URL}")
-    
-    if story_chain_service is None or story_chain_service.colab_url != COLAB_URL:
+    if story_chain_service is None or story_chain_service.colab_url != COLAB_URL or story_chain_service.voice_url != COLAB_URL_2:
         try:
-            logger.info("Creating new StoryIterationChain instance")
-            story_chain_service = StoryIterationChain(colab_url=COLAB_URL)
+            story_chain_service = StoryIterationChain(colab_url=COLAB_URL, voice_url=COLAB_URL_2)
             logger.info("StoryIterationChain service created successfully")
         except Exception as e:
             logger.error(f"Error creating StoryIterationChain service: {str(e)}")
             raise
-
     return story_chain_service
 
 
+# @csrf_exempt
+# def generate_content(request):
+#     if request.method == 'POST':
+#         try:
+#             logger.info(f"Raw request data: {request.body}")
+            
+#             if not COLAB_URL:
+#                 logger.error("COLAB_URL not set")
+#                 return JsonResponse({
+#                     "error": "Colab URL not set. Update via /update-ngrok-url/."
+#                 }, status=500)
+
+#             try:
+#                 data = json.loads(request.body)
+#                 logger.info(f"Parsed request data: {data}")
+
+#                 content_request = ContentRequest(
+#                     prompt=data.get("prompt"),
+#                     genre=data.get("genre", "Adventure"), 
+#                     iterations=data.get("iterations", 4)
+#                 )
+                
+#                 if not content_request.prompt:
+#                     return JsonResponse({"error": "Prompt is required"}, status=400)
+
+#                 logger.info(f"Processing request - prompt: {content_request.prompt}, "
+#                           f"genre: {content_request.genre}, "
+#                           f"iterations: {content_request.iterations}")
+
+#             except json.JSONDecodeError as e:
+#                 logger.error(f"JSON decode error: {str(e)}")
+#                 return JsonResponse({"error": "Invalid JSON format."}, status=400)
+#             except ValidationError as e:  
+#                 logger.error(f"Validation error: {str(e)}")
+#                 return JsonResponse({"error": f"Invalid request format: {str(e)}"}, status=400)
+
+#             try:
+#                 logger.info("Getting StoryIterationChain service")
+#                 service = get_story_chain_service()
+#                 logger.info("StoryIterationChain service initialized")
+#             except Exception as e:
+#                 logger.error(f"StoryIterationChain service initialization error: {str(e)}")
+#                 return JsonResponse({"error": str(e)}, status=500)
+            
+#             try:
+#                 logger.info("Starting content generation")
+                
+#                 async def run_pipeline():
+#                     try:
+#                         results = await service.generate_content_pipeline(content_request)
+#                         logger.info("Content generation successful")
+#                         return results
+#                     finally:
+#                         await service.cleanup()
+                
+#                 loop = asyncio.new_event_loop()
+#                 asyncio.set_event_loop(loop)
+#                 try:
+#                     results = loop.run_until_complete(run_pipeline())
+#                 finally:
+#                     loop.close()
+                
+#                 logger.info("Content generation completed")
+
+#                 serialized_results = [
+#                     {
+#                         "story": r.story,
+#                         "image_description": r.image_description,
+#                         "image_url": r.image_url,
+#                         "iteration": r.iteration
+#                     }
+#                     for r in results
+#                 ]
+
+#                 response_data = {
+#                     "success": True,
+#                     "results": serialized_results,
+#                     "metrics": {
+#                         "total_tokens": service.token_callback.total_tokens,
+#                         "successful_requests": service.token_callback.successful_requests,
+#                         "failed_requests": service.token_callback.failed_requests
+#                     }
+#                 }
+
+#                 logger.info(f"Returning response with {len(serialized_results)} results")
+#                 return JsonResponse(response_data, status=200)
+
+#             except Exception as e:
+#                 error_msg = f"Content generation error: {str(e)}"
+#                 logger.error(error_msg)
+#                 return JsonResponse({"error": error_msg}, status=500)
+
+#         except Exception as e:
+#             error_msg = f"Unexpected error in generate_content: {str(e)}"
+#             logger.error(error_msg)
+#             import traceback
+#             traceback.print_exc()
+#             return JsonResponse({
+#                 "error": error_msg
+#             }, status=500)
+
+#     return JsonResponse({
+#         "error": "Invalid request method."
+#     }, status=405)
 @csrf_exempt
 def generate_content(request):
     if request.method == 'POST':
         try:
             logger.info(f"Raw request data: {request.body}")
             
-            if not COLAB_URL:
-                logger.error("COLAB_URL not set")
+            if not COLAB_URL or not COLAB_URL_2:
+                logger.error("COLAB_URL or COLAB_URL_2 not set")
                 return JsonResponse({
-                    "error": "Colab URL not set. Update via /update-ngrok-url/."
+                    "error": "Required services not configured. Update URLs first."
                 }, status=500)
 
             try:
@@ -139,18 +256,18 @@ def generate_content(request):
             try:
                 logger.info("Getting StoryIterationChain service")
                 service = get_story_chain_service()
-                logger.info("StoryIterationChain service initialized")
+                logger.info("StoryIterationChain service initialized with both URLs")
             except Exception as e:
                 logger.error(f"StoryIterationChain service initialization error: {str(e)}")
                 return JsonResponse({"error": str(e)}, status=500)
             
             try:
-                logger.info("Starting content generation")
+                logger.info("Starting content generation with voice synthesis")
                 
                 async def run_pipeline():
                     try:
                         results = await service.generate_content_pipeline(content_request)
-                        logger.info("Content generation successful")
+                        logger.info("Content and voice generation successful")
                         return results
                     finally:
                         await service.cleanup()
@@ -162,13 +279,14 @@ def generate_content(request):
                 finally:
                     loop.close()
                 
-                logger.info("Content generation completed")
+                logger.info("Content generation pipeline completed")
 
                 serialized_results = [
                     {
                         "story": r.story,
                         "image_description": r.image_description,
                         "image_url": r.image_url,
+                        "voice_data": r.voice_data,  # Include voice data in response
                         "iteration": r.iteration
                     }
                     for r in results
@@ -226,10 +344,10 @@ def get_metrics(request):
 @csrf_exempt
 def generate_voice(request):
     """Handle voice generation requests"""
-    global COLAB_URL
+    global COLAB_URL_2
     if request.method == 'POST':
         try:
-            if not COLAB_URL:
+            if not COLAB_URL_2:
                 return JsonResponse({"error": "Colab service not available"}, status=503)
 
             data = json.loads(request.body)
@@ -239,7 +357,7 @@ def generate_voice(request):
                 return JsonResponse({"error": "Text is required"}, status=400)
 
             response = requests.post(
-                f"{COLAB_URL}/generate-speech",
+                f"{COLAB_URL_2}/generate-speech",
                 json={"text": text},
                 timeout=90
             )

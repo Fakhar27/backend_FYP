@@ -27,6 +27,7 @@ class ContentResponse(BaseModel):
     """Response model for each story iteration"""
     story: str
     image_description: str
+    voice_data: Optional[str]
     image_url: Optional[str]
     iteration: int
 
@@ -60,7 +61,7 @@ class TokenUsageCallback(BaseCallbackHandler):
         logger.error(f"LLM error occurred: {str(error)}")
 
 class StoryIterationChain:
-    def __init__(self, colab_url: Optional[str] = None):
+    def __init__(self, colab_url: Optional[str] = None, voice_url: Optional[str] = None):
         self.token_callback = TokenUsageCallback()
         self.client = Client()
         
@@ -72,6 +73,7 @@ class StoryIterationChain:
         )
         
         self.colab_url = colab_url or os.getenv("COLAB_URL")
+        self.voice_url = voice_url or os.getenv("COLAB_URL_2")
         self._session = None
         self._session_refs = 0
         
@@ -225,10 +227,59 @@ class StoryIterationChain:
                 await self._release_session()
                 
         return None
+    
+    async def generate_voice(self, text: str) -> Optional[str]:
+        """Generate voice narration using Bark API"""
+        if not self.voice_url:
+            logger.error("Voice URL not set")
+            return None
+            
+        retries = 3
+        for attempt in range(retries):
+            try:
+                session = await self.get_session()
+                logger.info(f"Sending voice generation request for text: {text}")
+                
+                async with session.post(
+                    f"{self.voice_url}/generate-speech",
+                    json={"text": text},
+                    timeout=aiohttp.ClientTimeout(total=120)  
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    
+                    if 'error' in result:
+                        logger.error(f"Error from voice generation: {result['error']}")
+                        if attempt < retries - 1:
+                            await asyncio.sleep(1)
+                            continue
+                        return None
+                        
+                    audio_data = result.get('audio_data')
+                    if not audio_data:
+                        logger.error("No audio data in response")
+                        if attempt < retries - 1:
+                            await asyncio.sleep(1)
+                            continue
+                        return None
+                    
+                    logger.info("Voice generated successfully")
+                    return audio_data
+                    
+            except Exception as e:
+                logger.error(f"Voice generation failed (attempt {attempt + 1}/{retries}): {str(e)}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return None
+            finally:
+                await self._release_session()
+                
+        return None
 
     @traceable(run_type="chain")
     async def generate_content_pipeline(self, request: ContentRequest) -> List[ContentResponse]:
-        """Generate complete story with images based on ContentRequest."""
+        """Generate complete story with images and voice narration based on ContentRequest."""
         with trace(
             name="Full Story Generation",
             run_type="chain",
@@ -240,17 +291,29 @@ class StoryIterationChain:
             for i in range(request.iterations):
                 logger.info(f"Starting iteration {i + 1}")
                 
+                # Generate story and image description
                 iteration_result = await self.generate_iteration(
                     input_text=request.prompt if i == 0 else "", 
                     genre=request.genre,
                     previous_content=previous_content
                 )
                 
-                image_url = await self.generate_image(iteration_result["image"])
+                # Parallel generation of image and voice
+                image_task = asyncio.create_task(
+                    self.generate_image(iteration_result["image"])
+                )
+                voice_task = asyncio.create_task(
+                    self.generate_voice(iteration_result["story"])
+                )
+                
+                # Wait for both tasks to complete
+                image_url, voice_data = await asyncio.gather(image_task, voice_task)
+                
                 response = ContentResponse(
                     story=iteration_result["story"],
                     image_description=iteration_result["image"],
                     image_url=image_url,
+                    voice_data=voice_data,  
                     iteration=i + 1
                 )
                 
@@ -262,6 +325,7 @@ class StoryIterationChain:
                         "story": iteration_result["story"],
                         "image_description": iteration_result["image"],
                         "image_url": image_url,
+                        "voice_data": "Generated" if voice_data else "Failed",
                         "genre": request.genre
                     }
                 })

@@ -332,7 +332,8 @@ class StoryIterationChain:
                         # Create segment data
                         segment_data = {
                             'image_data': image_data,
-                            'audio_data': audio_data
+                            'audio_data': audio_data,
+                            'story_text': iteration_result["story"]
                         }
                         
                         # Process segment

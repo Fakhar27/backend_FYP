@@ -1,5 +1,6 @@
 from langchain_cohere import ChatCohere
 from langchain_core.prompts import ChatPromptTemplate
+import base64
 from langchain_cohere.react_multi_hop.parsing import parse_answer_with_prefixes
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
@@ -10,6 +11,7 @@ import aiohttp
 import os
 import logging
 from typing import Optional, Dict, Any, List
+from .video_manager import VideoManager
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
@@ -277,62 +279,254 @@ class StoryIterationChain:
                 
         return None
 
+
     @traceable(run_type="chain")
-    async def generate_content_pipeline(self, request: ContentRequest) -> List[ContentResponse]:
-        """Generate complete story with images and voice narration based on ContentRequest."""
+    async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
+        """Generate complete story with images and voice narration, return as video"""
         with trace(
             name="Full Story Generation",
             run_type="chain",
             project_name=os.getenv("LANGSMITH_PROJECT")
         ) as run:
-            results = []
-            previous_content = None
-            
-            for i in range(request.iterations):
-                logger.info(f"Starting iteration {i + 1}")
+            video_manager = None
+            try:
+                video_manager = VideoManager()
+                previous_content = None
                 
-                # Generate story and image description
-                iteration_result = await self.generate_iteration(
-                    input_text=request.prompt if i == 0 else "", 
-                    genre=request.genre,
-                    previous_content=previous_content
-                )
+                for i in range(request.iterations):
+                    logger.info(f"Starting iteration {i + 1}")
+                    
+                    try:
+                        # Generate story and image description
+                        iteration_result = await self.generate_iteration(
+                            input_text=request.prompt if i == 0 else "", 
+                            genre=request.genre,
+                            previous_content=previous_content
+                        )
+                        
+                        # Parallel generation of image and voice
+                        image_task = asyncio.create_task(
+                            self.generate_image(iteration_result["image"])
+                        )
+                        voice_task = asyncio.create_task(
+                            self.generate_voice(iteration_result["story"])
+                        )
+                        
+                        # Wait for both tasks to complete
+                        results = await asyncio.gather(
+                            image_task, 
+                            voice_task, 
+                            return_exceptions=True
+                        )
+                        
+                        # Check for exceptions in gathered results
+                        for result in results:
+                            if isinstance(result, Exception):
+                                raise result
+                                
+                        image_data, audio_data = results
+                        
+                        if not image_data or not audio_data:
+                            raise ValueError(f"Failed to generate media for iteration {i + 1}")
+                        
+                        # Create segment data
+                        segment_data = {
+                            'image_data': image_data,
+                            'audio_data': audio_data
+                        }
+                        
+                        # Process segment
+                        video_manager.create_segment(segment_data, i)
+                        
+                        previous_content = iteration_result
+                        
+                        # Add metadata for tracking
+                        run.add_metadata({
+                            f"iteration_{i+1}": {
+                                "story": iteration_result["story"],
+                                "image_description": iteration_result["image"],
+                                "status": "processed",
+                                "genre": request.genre
+                            }
+                        })
+                        
+                        logger.info(f"Completed iteration {i + 1}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error in iteration {i + 1}: {str(e)}")
+                        raise
                 
-                # Parallel generation of image and voice
-                image_task = asyncio.create_task(
-                    self.generate_image(iteration_result["image"])
-                )
-                voice_task = asyncio.create_task(
-                    self.generate_voice(iteration_result["story"])
-                )
+                # Concatenate all segments
+                logger.info("Starting video concatenation")
+                final_video_path = video_manager.concatenate_segments()
                 
-                # Wait for both tasks to complete
-                image_url, voice_data = await asyncio.gather(image_task, voice_task)
+                # Read and encode final video
+                logger.info("Encoding final video")
+                with open(final_video_path, 'rb') as video_file:
+                    video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
                 
-                response = ContentResponse(
-                    story=iteration_result["story"],
-                    image_description=iteration_result["image"],
-                    image_url=image_url,
-                    voice_data=voice_data,  
-                    iteration=i + 1
-                )
-                
-                results.append(response)
-                previous_content = iteration_result
-                
-                run.add_metadata({
-                    f"iteration_{i+1}": {
-                        "story": iteration_result["story"],
-                        "image_description": iteration_result["image"],
-                        "image_url": image_url,
-                        "voice_data": "Generated" if voice_data else "Failed",
-                        "genre": request.genre
+                return {
+                    "success": True,
+                    "video_data": video_base64,
+                    "content_type": "video/mp4",
+                    "metrics": {
+                        "total_tokens": self.token_callback.total_tokens,
+                        "successful_requests": self.token_callback.successful_requests,
+                        "failed_requests": self.token_callback.failed_requests
                     }
-                })
+                }
                 
-                logger.info(f"Completed iteration {i + 1}")
+            except Exception as e:
+                logger.error(f"Error in video generation pipeline: {str(e)}")
+                raise
             
-            return results
+            finally:
+                if video_manager:
+                    try:
+                        video_manager.cleanup()
+                    except Exception as e:
+                        logger.error(f"Error during video manager cleanup: {str(e)}")
+    # @traceable(run_type="chain")
+    # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
+    #     """Generate complete story with images and voice narration, return as video"""
+    #     with trace(
+    #         name="Full Story Generation",
+    #         run_type="chain",
+    #         project_name=os.getenv("LANGSMITH_PROJECT")
+    #     ) as run:
+    #         try:
+    #             video_manager = VideoManager()
+    #             final_video_path = None
+                
+    #             previous_content = None
+                
+    #             for i in range(request.iterations):
+    #                 logger.info(f"Starting iteration {i + 1}")
+                    
+    #                 # Generate story and image description
+    #                 iteration_result = await self.generate_iteration(
+    #                     input_text=request.prompt if i == 0 else "", 
+    #                     genre=request.genre,
+    #                     previous_content=previous_content
+    #                 )
+                    
+    #                 # Parallel generation of image and voice
+    #                 image_task = asyncio.create_task(
+    #                     self.generate_image(iteration_result["image"])
+    #                 )
+    #                 voice_task = asyncio.create_task(
+    #                     self.generate_voice(iteration_result["story"])
+    #                 )
+                    
+    #                 # Wait for both tasks to complete
+    #                 image_data, audio_data = await asyncio.gather(image_task, voice_task)
+                    
+    #                 if not image_data or not audio_data:
+    #                     raise ValueError(f"Failed to generate media for iteration {i + 1}")
+                    
+    #                 # Create video segment
+    #                 segment = VideoSegment(
+    #                     image_data=image_data,
+    #                     audio_data=audio_data,
+    #                     story_text=iteration_result["story"]
+    #                 )
+                    
+    #                 # Process segment
+    #                 video_manager.create_segment(segment, i)
+                    
+    #                 previous_content = iteration_result
+                    
+    #                 # Add metadata for tracking
+    #                 run.add_metadata({
+    #                     f"iteration_{i+1}": {
+    #                         "story": iteration_result["story"],
+    #                         "image_description": iteration_result["image"],
+    #                         "status": "processed",
+    #                         "genre": request.genre
+    #                     }
+    #                 })
+                    
+    #                 logger.info(f"Completed iteration {i + 1}")
+                
+    #             final_video_path = video_manager.concatenate_segments()
+    #             with open(final_video_path, 'rb') as video_file:
+    #                 video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
+                
+    #             return {
+    #                 "success": True,
+    #                 "video_data": video_base64,
+    #                 "content_type": "video/mp4",
+    #                 "metrics": {
+    #                     "total_tokens": self.token_callback.total_tokens,
+    #                     "successful_requests": self.token_callback.successful_requests,
+    #                     "failed_requests": self.token_callback.failed_requests
+    #                 }
+    #             }
+                
+    #         except Exception as e:
+    #             logger.error(f"Error in video generation pipeline: {str(e)}")
+    #             raise
+            
+    #         finally:
+    #             if 'video_manager' in locals():
+    #                 video_manager.cleanup()
+    
+    # @traceable(run_type="chain")
+    # async def generate_content_pipeline(self, request: ContentRequest) -> List[ContentResponse]:
+    #     """Generate complete story with images and voice narration based on ContentRequest."""
+    #     with trace(
+    #         name="Full Story Generation",
+    #         run_type="chain",
+    #         project_name=os.getenv("LANGSMITH_PROJECT")
+    #     ) as run:
+    #         results = []
+    #         previous_content = None
+            
+    #         for i in range(request.iterations):
+    #             logger.info(f"Starting iteration {i + 1}")
+                
+    #             # Generate story and image description
+    #             iteration_result = await self.generate_iteration(
+    #                 input_text=request.prompt if i == 0 else "", 
+    #                 genre=request.genre,
+    #                 previous_content=previous_content
+    #             )
+                
+    #             # Parallel generation of image and voice
+    #             image_task = asyncio.create_task(
+    #                 self.generate_image(iteration_result["image"])
+    #             )
+    #             voice_task = asyncio.create_task(
+    #                 self.generate_voice(iteration_result["story"])
+    #             )
+                
+    #             # Wait for both tasks to complete
+    #             image_url, voice_data = await asyncio.gather(image_task, voice_task)
+                
+    #             response = ContentResponse(
+    #                 story=iteration_result["story"],
+    #                 image_description=iteration_result["image"],
+    #                 image_url=image_url,
+    #                 voice_data=voice_data,  
+    #                 iteration=i + 1
+    #             )
+                
+    #             results.append(response)
+    #             previous_content = iteration_result
+                
+    #             run.add_metadata({
+    #                 f"iteration_{i+1}": {
+    #                     "story": iteration_result["story"],
+    #                     "image_description": iteration_result["image"],
+    #                     "image_url": image_url,
+    #                     "voice_data": "Generated" if voice_data else "Failed",
+    #                     "genre": request.genre
+    #                 }
+    #             })
+                
+    #             logger.info(f"Completed iteration {i + 1}")
+            
+    #         return results
 
     async def cleanup(self):
         """Cleanup resources"""

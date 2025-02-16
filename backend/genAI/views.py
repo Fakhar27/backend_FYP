@@ -301,7 +301,7 @@ def generate_content(request):
                 logger.info(f"Parsed request data: {data}")
 
                 # Validate iterations range
-                iterations = data.get("iterations", 4)
+                iterations = data.get("iterations", 2)
                 if iterations < 1 or iterations > 10:
                     return JsonResponse({
                         "error": "Iterations must be between 1 and 10"

@@ -96,192 +96,6 @@ def get_story_chain_service():
             raise
     return story_chain_service
 
-# @csrf_exempt
-# def generate_content(request):
-#     if request.method == 'POST':
-#         try:
-#             logger.info(f"Raw request data: {request.body}")
-            
-#             if not COLAB_URL or not COLAB_URL_2:
-#                 logger.error("COLAB_URL or COLAB_URL_2 not set")
-#                 return JsonResponse({
-#                     "error": "Required services not configured. Update URLs first."
-#                 }, status=500)
-
-#             try:
-#                 data = json.loads(request.body)
-#                 logger.info(f"Parsed request data: {data}")
-
-#                 content_request = ContentRequest(
-#                     prompt=data.get("prompt"),
-#                     genre=data.get("genre", "Adventure"), 
-#                     iterations=data.get("iterations", 4)
-#                 )
-                
-#                 if not content_request.prompt:
-#                     return JsonResponse({"error": "Prompt is required"}, status=400)
-
-#                 logger.info(f"Processing request - prompt: {content_request.prompt}, "
-#                           f"genre: {content_request.genre}, "
-#                           f"iterations: {content_request.iterations}")
-
-#             except json.JSONDecodeError as e:
-#                 logger.error(f"JSON decode error: {str(e)}")
-#                 return JsonResponse({"error": "Invalid JSON format."}, status=400)
-#             except ValidationError as e:  
-#                 logger.error(f"Validation error: {str(e)}")
-#                 return JsonResponse({"error": f"Invalid request format: {str(e)}"}, status=400)
-
-#             try:
-#                 logger.info("Getting StoryIterationChain service")
-#                 service = get_story_chain_service()
-#                 logger.info("StoryIterationChain service initialized with both URLs")
-#             except Exception as e:
-#                 logger.error(f"StoryIterationChain service initialization error: {str(e)}")
-#                 return JsonResponse({"error": str(e)}, status=500)
-            
-#             try:
-#                 logger.info("Starting content generation with voice synthesis")
-                
-#                 async def run_pipeline():
-#                     try:
-#                         results = await service.generate_content_pipeline(content_request)
-#                         logger.info("Content and voice generation successful")
-#                         return results
-#                     finally:
-#                         await service.cleanup()
-                
-#                 loop = asyncio.new_event_loop()
-#                 asyncio.set_event_loop(loop)
-#                 try:
-#                     results = loop.run_until_complete(run_pipeline())
-#                 finally:
-#                     loop.close()
-                
-#                 logger.info("Content generation pipeline completed")
-
-#                 serialized_results = [
-#                     {
-#                         "story": r.story,
-#                         "image_description": r.image_description,
-#                         "image_url": r.image_url,
-#                         "voice_data": r.voice_data,  
-#                         "iteration": r.iteration
-#                     }
-#                     for r in results
-#                 ]
-
-#                 response_data = {
-#                     "success": True,
-#                     "results": serialized_results,
-#                     "metrics": {
-#                         "total_tokens": service.token_callback.total_tokens,
-#                         "successful_requests": service.token_callback.successful_requests,
-#                         "failed_requests": service.token_callback.failed_requests
-#                     }
-#                 }
-
-#                 logger.info(f"Returning response with {len(serialized_results)} results")
-#                 return JsonResponse(response_data, status=200)
-
-#             except Exception as e:
-#                 error_msg = f"Content generation error: {str(e)}"
-#                 logger.error(error_msg)
-#                 return JsonResponse({"error": error_msg}, status=500)
-
-#         except Exception as e:
-#             error_msg = f"Unexpected error in generate_content: {str(e)}"
-#             logger.error(error_msg)
-#             import traceback
-#             traceback.print_exc()
-#             return JsonResponse({
-#                 "error": error_msg
-#             }, status=500)
-
-#     return JsonResponse({
-#         "error": "Invalid request method."
-#     }, status=405)
-
-
-
-
-# @csrf_exempt
-# def generate_content(request):
-#     if request.method == 'POST':
-#         try:
-#             logger.info(f"Raw request data: {request.body}")
-            
-#             if not COLAB_URL or not COLAB_URL_2:
-#                 logger.error("COLAB_URL or COLAB_URL_2 not set")
-#                 return JsonResponse({
-#                     "error": "Required services not configured. Update URLs first."
-#                 }, status=500)
-
-#             try:
-#                 data = json.loads(request.body)
-#                 logger.info(f"Parsed request data: {data}")
-
-#                 content_request = ContentRequest(
-#                     prompt=data.get("prompt"),
-#                     genre=data.get("genre", "Adventure"), 
-#                     iterations=data.get("iterations", 4)
-#                 )
-                
-#                 if not content_request.prompt:
-#                     return JsonResponse({"error": "Prompt is required"}, status=400)
-
-#             except json.JSONDecodeError as e:
-#                 logger.error(f"JSON decode error: {str(e)}")
-#                 return JsonResponse({"error": "Invalid JSON format."}, status=400)
-#             except ValidationError as e:  
-#                 logger.error(f"Validation error: {str(e)}")
-#                 return JsonResponse({"error": f"Invalid request format: {str(e)}"}, status=400)
-
-#             try:
-#                 service = get_story_chain_service()
-                
-#                 async def run_pipeline():
-#                     try:
-#                         result = await service.generate_content_pipeline(content_request)
-#                         logger.info("Content generation and video creation successful")
-#                         return result
-#                     finally:
-#                         await service.cleanup()
-                
-#                 loop = asyncio.new_event_loop()
-#                 asyncio.set_event_loop(loop)
-#                 try:
-#                     result = loop.run_until_complete(run_pipeline())
-#                 finally:
-#                     loop.close()
-                
-#                 response_data = {
-#                     "success": True,
-#                     "video_data": result["video_data"],
-#                     "content_type": result["content_type"],
-#                     "metrics": result["metrics"]
-#                 }
-
-#                 logger.info("Returning video response")
-#                 return JsonResponse(response_data, status=200)
-
-#             except Exception as e:
-#                 error_msg = f"Content generation error: {str(e)}"
-#                 logger.error(error_msg)
-#                 return JsonResponse({"error": error_msg}, status=500)
-
-#         except Exception as e:
-#             error_msg = f"Unexpected error in generate_content: {str(e)}"
-#             logger.error(error_msg)
-#             traceback.print_exc()
-#             return JsonResponse({
-#                 "error": error_msg
-#             }, status=500)
-
-#     return JsonResponse({
-#         "error": "Invalid request method."
-#     }, status=405)
-
 @csrf_exempt
 def generate_content(request):
     if request.method == 'POST':
@@ -489,6 +303,200 @@ def getNotes(request):
 
 
 
+
+
+
+
+
+
+
+
+
+# @csrf_exempt
+# def generate_content(request):
+#     if request.method == 'POST':
+#         try:
+#             logger.info(f"Raw request data: {request.body}")
+            
+#             if not COLAB_URL or not COLAB_URL_2:
+#                 logger.error("COLAB_URL or COLAB_URL_2 not set")
+#                 return JsonResponse({
+#                     "error": "Required services not configured. Update URLs first."
+#                 }, status=500)
+
+#             try:
+#                 data = json.loads(request.body)
+#                 logger.info(f"Parsed request data: {data}")
+
+#                 content_request = ContentRequest(
+#                     prompt=data.get("prompt"),
+#                     genre=data.get("genre", "Adventure"), 
+#                     iterations=data.get("iterations", 4)
+#                 )
+                
+#                 if not content_request.prompt:
+#                     return JsonResponse({"error": "Prompt is required"}, status=400)
+
+#                 logger.info(f"Processing request - prompt: {content_request.prompt}, "
+#                           f"genre: {content_request.genre}, "
+#                           f"iterations: {content_request.iterations}")
+
+#             except json.JSONDecodeError as e:
+#                 logger.error(f"JSON decode error: {str(e)}")
+#                 return JsonResponse({"error": "Invalid JSON format."}, status=400)
+#             except ValidationError as e:  
+#                 logger.error(f"Validation error: {str(e)}")
+#                 return JsonResponse({"error": f"Invalid request format: {str(e)}"}, status=400)
+
+#             try:
+#                 logger.info("Getting StoryIterationChain service")
+#                 service = get_story_chain_service()
+#                 logger.info("StoryIterationChain service initialized with both URLs")
+#             except Exception as e:
+#                 logger.error(f"StoryIterationChain service initialization error: {str(e)}")
+#                 return JsonResponse({"error": str(e)}, status=500)
+            
+#             try:
+#                 logger.info("Starting content generation with voice synthesis")
+                
+#                 async def run_pipeline():
+#                     try:
+#                         results = await service.generate_content_pipeline(content_request)
+#                         logger.info("Content and voice generation successful")
+#                         return results
+#                     finally:
+#                         await service.cleanup()
+                
+#                 loop = asyncio.new_event_loop()
+#                 asyncio.set_event_loop(loop)
+#                 try:
+#                     results = loop.run_until_complete(run_pipeline())
+#                 finally:
+#                     loop.close()
+                
+#                 logger.info("Content generation pipeline completed")
+
+#                 serialized_results = [
+#                     {
+#                         "story": r.story,
+#                         "image_description": r.image_description,
+#                         "image_url": r.image_url,
+#                         "voice_data": r.voice_data,  
+#                         "iteration": r.iteration
+#                     }
+#                     for r in results
+#                 ]
+
+#                 response_data = {
+#                     "success": True,
+#                     "results": serialized_results,
+#                     "metrics": {
+#                         "total_tokens": service.token_callback.total_tokens,
+#                         "successful_requests": service.token_callback.successful_requests,
+#                         "failed_requests": service.token_callback.failed_requests
+#                     }
+#                 }
+
+#                 logger.info(f"Returning response with {len(serialized_results)} results")
+#                 return JsonResponse(response_data, status=200)
+
+#             except Exception as e:
+#                 error_msg = f"Content generation error: {str(e)}"
+#                 logger.error(error_msg)
+#                 return JsonResponse({"error": error_msg}, status=500)
+
+#         except Exception as e:
+#             error_msg = f"Unexpected error in generate_content: {str(e)}"
+#             logger.error(error_msg)
+#             import traceback
+#             traceback.print_exc()
+#             return JsonResponse({
+#                 "error": error_msg
+#             }, status=500)
+
+#     return JsonResponse({
+#         "error": "Invalid request method."
+#     }, status=405)
+
+
+
+
+# @csrf_exempt
+# def generate_content(request):
+#     if request.method == 'POST':
+#         try:
+#             logger.info(f"Raw request data: {request.body}")
+            
+#             if not COLAB_URL or not COLAB_URL_2:
+#                 logger.error("COLAB_URL or COLAB_URL_2 not set")
+#                 return JsonResponse({
+#                     "error": "Required services not configured. Update URLs first."
+#                 }, status=500)
+
+#             try:
+#                 data = json.loads(request.body)
+#                 logger.info(f"Parsed request data: {data}")
+
+#                 content_request = ContentRequest(
+#                     prompt=data.get("prompt"),
+#                     genre=data.get("genre", "Adventure"), 
+#                     iterations=data.get("iterations", 4)
+#                 )
+                
+#                 if not content_request.prompt:
+#                     return JsonResponse({"error": "Prompt is required"}, status=400)
+
+#             except json.JSONDecodeError as e:
+#                 logger.error(f"JSON decode error: {str(e)}")
+#                 return JsonResponse({"error": "Invalid JSON format."}, status=400)
+#             except ValidationError as e:  
+#                 logger.error(f"Validation error: {str(e)}")
+#                 return JsonResponse({"error": f"Invalid request format: {str(e)}"}, status=400)
+
+#             try:
+#                 service = get_story_chain_service()
+                
+#                 async def run_pipeline():
+#                     try:
+#                         result = await service.generate_content_pipeline(content_request)
+#                         logger.info("Content generation and video creation successful")
+#                         return result
+#                     finally:
+#                         await service.cleanup()
+                
+#                 loop = asyncio.new_event_loop()
+#                 asyncio.set_event_loop(loop)
+#                 try:
+#                     result = loop.run_until_complete(run_pipeline())
+#                 finally:
+#                     loop.close()
+                
+#                 response_data = {
+#                     "success": True,
+#                     "video_data": result["video_data"],
+#                     "content_type": result["content_type"],
+#                     "metrics": result["metrics"]
+#                 }
+
+#                 logger.info("Returning video response")
+#                 return JsonResponse(response_data, status=200)
+
+#             except Exception as e:
+#                 error_msg = f"Content generation error: {str(e)}"
+#                 logger.error(error_msg)
+#                 return JsonResponse({"error": error_msg}, status=500)
+
+#         except Exception as e:
+#             error_msg = f"Unexpected error in generate_content: {str(e)}"
+#             logger.error(error_msg)
+#             traceback.print_exc()
+#             return JsonResponse({
+#                 "error": error_msg
+#             }, status=500)
+
+#     return JsonResponse({
+#         "error": "Invalid request method."
+#     }, status=405)
 
 
 # def get_story_chain_service():

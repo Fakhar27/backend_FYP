@@ -387,7 +387,38 @@ class StoryIterationChain:
                         video_manager.cleanup()
                     except Exception as e:
                         logger.error(f"Error during video manager cleanup: {str(e)}")
-    # @traceable(run_type="chain")
+    
+
+    async def cleanup(self):
+        """Cleanup resources"""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+            self._session_refs = 0
+
+    def __del__(self):
+        """Ensure cleanup on deletion"""
+        if self._session and not self._session.closed:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.cleanup())
+                else:
+                    loop.run_until_complete(self.cleanup())
+            except Exception as e:
+                logger.error(f"Error during cleanup: {str(e)}")
+                
+                
+                
+
+
+
+
+
+
+
+               
+# @traceable(run_type="chain")
     # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
     #     """Generate complete story with images and voice narration, return as video"""
     #     with trace(
@@ -528,22 +559,3 @@ class StoryIterationChain:
     #             logger.info(f"Completed iteration {i + 1}")
             
     #         return results
-
-    async def cleanup(self):
-        """Cleanup resources"""
-        if self._session and not self._session.closed:
-            await self._session.close()
-            self._session = None
-            self._session_refs = 0
-
-    def __del__(self):
-        """Ensure cleanup on deletion"""
-        if self._session and not self._session.closed:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self.cleanup())
-                else:
-                    loop.run_until_complete(self.cleanup())
-            except Exception as e:
-                logger.error(f"Error during cleanup: {str(e)}")

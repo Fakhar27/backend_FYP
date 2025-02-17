@@ -71,8 +71,9 @@ class VideoManager:
         except Exception as e:
             raise VideoProcessingError(f"Failed to save audio: {e}")
 
+    
     # def _create_srt_content(self, text: str, start: float, duration: float) -> str:
-    #     """Generate SRT format subtitle content"""
+    #     """Generate better formatted SRT content"""
     #     def format_time(seconds: float) -> str:
     #         td = timedelta(seconds=seconds)
     #         hours = td.seconds // 3600
@@ -81,65 +82,99 @@ class VideoManager:
     #         ms = round(td.microseconds / 1000)
     #         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{ms:03d}"
 
-    #     end = start + duration
-    #     return f"1\n{format_time(start)} --> {format_time(end)}\n{text}\n\n"
+    #     # Split long text into multiple subtitles if needed
+    #     words = text.split()
+    #     chunks = []
+    #     current_chunk = []
+        
+    #     for word in words:
+    #         current_chunk.append(word)
+    #         if len(' '.join(current_chunk)) > 40:  # Max chars per line
+    #             chunks.append(' '.join(current_chunk[:-1]))
+    #             current_chunk = [word]
+    #     if current_chunk:
+    #         chunks.append(' '.join(current_chunk))
+
+    #     # Create SRT entries
+    #     srt_parts = []
+    #     chunk_duration = duration / len(chunks)
+        
+    #     for i, chunk in enumerate(chunks, 1):
+    #         chunk_start = start + (i-1) * chunk_duration
+    #         chunk_end = chunk_start + chunk_duration
+    #         srt_parts.append(
+    #             f"{i}\n"
+    #             f"{format_time(chunk_start)} --> {format_time(chunk_end)}\n"
+    #             f"{chunk}\n"
+    #         )
+
+    #     return "\n".join(srt_parts)
+
+    # @contextmanager
+    # def _create_clips(self, image_array: np.ndarray, audio_path: str, duration: float):
+    #     """Context manager for creating and cleaning up clips"""
+    #     clips = []
+    #     try:
+    #         video_clip = ImageClip(image_array).with_duration(duration)
+    #         audio_clip = AudioFileClip(audio_path)
+    #         video_clip = video_clip.with_audio(audio_clip)
+    #         clips.extend([video_clip, audio_clip])
+    #         yield video_clip, audio_clip
+    #     finally:
+    #         for clip in clips:
+    #             try:
+    #                 clip.close()
+    #             except Exception as e:
+    #                 logger.error(f"Error closing clip: {e}")
     def _create_srt_content(self, text: str, start: float, duration: float) -> str:
-        """Generate better formatted SRT content"""
         def format_time(seconds: float) -> str:
-            td = timedelta(seconds=seconds)
+            td = timedelta(seconds=max(0, seconds))
             hours = td.seconds // 3600
             minutes = (td.seconds % 3600) // 60
             seconds = td.seconds % 60
             ms = round(td.microseconds / 1000)
             return f"{hours:02d}:{minutes:02d}:{seconds:02d},{ms:03d}"
 
-        # Split long text into multiple subtitles if needed
+        # Improve text chunking
         words = text.split()
         chunks = []
         current_chunk = []
         
         for word in words:
             current_chunk.append(word)
-            if len(' '.join(current_chunk)) > 40:  # Max chars per line
+            # Adjust max chars and consider word boundaries
+            if len(' '.join(current_chunk)) > 35:  # Shorter lines for better readability
                 chunks.append(' '.join(current_chunk[:-1]))
                 current_chunk = [word]
         if current_chunk:
             chunks.append(' '.join(current_chunk))
 
-        # Create SRT entries
+        # Create more precise timing
         srt_parts = []
-        chunk_duration = duration / len(chunks)
+        total_words = sum(len(chunk.split()) for chunk in chunks)
+        words_per_second = total_words / duration
         
+        current_time = start
         for i, chunk in enumerate(chunks, 1):
-            chunk_start = start + (i-1) * chunk_duration
-            chunk_end = chunk_start + chunk_duration
+            # Calculate duration based on word count
+            chunk_words = len(chunk.split())
+            chunk_duration = (chunk_words / words_per_second) * 1.2  # Add 20% buffer
+            
+            chunk_end = min(current_time + chunk_duration, start + duration)
+            
             srt_parts.append(
                 f"{i}\n"
-                f"{format_time(chunk_start)} --> {format_time(chunk_end)}\n"
+                f"{format_time(current_time)} --> {format_time(chunk_end)}\n"
                 f"{chunk}\n"
             )
+            current_time = chunk_end
 
         return "\n".join(srt_parts)
 
-    @contextmanager
-    def _create_clips(self, image_array: np.ndarray, audio_path: str, duration: float):
-        """Context manager for creating and cleaning up clips"""
-        clips = []
-        try:
-            video_clip = ImageClip(image_array).with_duration(duration)
-            audio_clip = AudioFileClip(audio_path)
-            video_clip = video_clip.with_audio(audio_clip)
-            clips.extend([video_clip, audio_clip])
-            yield video_clip, audio_clip
-        finally:
-            for clip in clips:
-                try:
-                    clip.close()
-                except Exception as e:
-                    logger.error(f"Error closing clip: {e}")
-
+    
+    
     # def create_segment(self, segment: Dict, index: int) -> str:
-    #     """Create a video segment with optional subtitles"""
+    #     """Create a video segment with dynamic subtitles"""
     #     logger.info(f"Creating segment {index}")
         
     #     try:
@@ -156,6 +191,17 @@ class VideoManager:
                 
     #             # Add subtitles if present
     #             if segment.get('story_text'):
+    #                 # Create subtitle generator - key change from old code
+    #                 def create_subtitle(txt):
+    #                     return TextClip(
+    #                         text=txt,
+    #                         font=self.font_path,
+    #                         font_size=50, 
+    #                         color='white',
+    #                         stroke_color='black',
+    #                         stroke_width=5,
+    #                     ).with_position(('center', 0.8))  # Position relative to frame height
+                        
     #                 # Create subtitle file
     #                 srt_content = self._create_srt_content(
     #                     segment['story_text'], 0, duration)
@@ -163,32 +209,28 @@ class VideoManager:
     #                 with open(srt_path, 'w', encoding='utf-8') as f:
     #                     f.write(srt_content)
                     
-    #                 # Create subtitle clip
-    #                 def create_subtitle(txt):
-    #                     return TextClip(
-    #                         text=txt,
-    #                         font=self.font_path,
-    #                         font_size=40,
-    #                         color='white',
-    #                         stroke_color='black',
-    #                         stroke_width=5
-    #                     ).with_position(('center', 'bottom'))
+    #                 # Create subtitle clip with generator
+    #                 subtitles = SubtitlesClip(
+    #                     srt_path, 
+    #                     make_textclip=create_subtitle
+    #                 ).with_duration(duration)
 
-    #                 subtitles = SubtitlesClip(srt_path, make_textclip=create_subtitle)
-    #                 final_clip = CompositeVideoClip([
-    #                     video_with_audio,
-    #                     subtitles.with_duration(duration)
-    #                 ])
+    #                 # Composite with proper layering
+    #                 final_clip = CompositeVideoClip(
+    #                     [video_with_audio, subtitles],
+    #                     size=video_with_audio.size
+    #                 )
     #             else:
     #                 final_clip = video_with_audio
 
-    #             # Write segment
+    #             # Write segment with improved settings
     #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
     #             final_clip.write_videofile(
     #                 output_path,
     #                 fps=30,
     #                 codec='libx264',
     #                 audio_codec='aac',
+    #                 bitrate='8000k',  # Higher bitrate for quality
     #                 remove_temp=True
     #             )
                 
@@ -197,8 +239,87 @@ class VideoManager:
 
     #     except Exception as e:
     #         raise VideoProcessingError(f"Failed to create segment {index}: {e}")
+    #     finally:
+    #         if 'final_clip' in locals():
+    #             final_clip.close()
+    # def create_segment(self, segment: Dict, index: int) -> str:
+    #     logger.info(f"Creating segment {index}")
+        
+    #     try:
+    #         # Process audio and image
+    #         audio_path = self._save_base64_audio(segment['audio_data'], index)
+    #         image_array = self._decode_base64_image(segment['image_data'])
+            
+    #         with AudioFileClip(audio_path) as audio_clip:
+    #             duration = audio_clip.duration
+                
+    #             # Create base video with proper size
+    #             video_clip = ImageClip(image_array).with_duration(duration)
+                
+    #             # Resize if needed (assuming 1024x1024 input)
+    #             if video_clip.size != (1024, 1024):
+    #                 video_clip = video_clip.resize((1024, 1024))
+                
+    #             video_with_audio = video_clip.with_audio(audio_clip)
+                
+    #             if segment.get('story_text'):
+    #                 # Create subtitle generator with improved positioning
+    #                 def create_subtitle(txt):
+    #                     return TextClip(
+    #                         text=txt,
+    #                         font=self.font_path,
+    #                         font_size=50,
+    #                         color='white',
+    #                         stroke_color='black',
+    #                         stroke_width=5,
+    #                     ).with_position(('center', 0.65))  # Lower position (65% from top)
+                    
+    #                 # Improve subtitle timing
+    #                 srt_content = self._create_srt_content(
+    #                     segment['story_text'],
+    #                     start=0,
+    #                     duration=duration * 0.98  # Slight buffer at the end
+    #                 )
+                    
+    #                 srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
+    #                 with open(srt_path, 'w', encoding='utf-8') as f:
+    #                     f.write(srt_content)
+                    
+    #                 # Create subtitle clip with proper duration
+    #                 subtitles = SubtitlesClip(
+    #                     srt_path, 
+    #                     make_textclip=create_subtitle
+    #                 ).with_duration(duration)  # Match audio duration exactly
+
+    #                 # Create final composite
+    #                 final_clip = CompositeVideoClip(
+    #                     [video_with_audio, subtitles],
+    #                     size=video_with_audio.size
+    #                 )
+    #             else:
+    #                 final_clip = video_with_audio
+
+    #             # Write with higher quality settings
+    #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+    #             final_clip.write_videofile(
+    #                 output_path,
+    #                 fps=30,
+    #                 codec='libx264',
+    #                 audio_codec='aac',
+    #                 bitrate='8000k',
+    #                 preset='slower',  # Better quality
+    #                 remove_temp=True
+    #             )
+                
+    #             self.segments.append(output_path)
+    #             return output_path
+
+    #     except Exception as e:
+    #         raise VideoProcessingError(f"Failed to create segment {index}: {e}")
+    #     finally:
+    #         if 'final_clip' in locals():
+    #             final_clip.close()
     def create_segment(self, segment: Dict, index: int) -> str:
-        """Create a video segment with dynamic subtitles"""
         logger.info(f"Creating segment {index}")
         
         try:
@@ -207,39 +328,40 @@ class VideoManager:
             image_array = self._decode_base64_image(segment['image_data'])
             
             with AudioFileClip(audio_path) as audio_clip:
-                duration = audio_clip.duration
+                audio_duration = audio_clip.duration
                 
-                # Create base video
-                video_clip = ImageClip(image_array).with_duration(duration)
+                # Create video clip matching audio duration
+                video_clip = ImageClip(image_array).with_duration(audio_duration)
                 video_with_audio = video_clip.with_audio(audio_clip)
                 
-                # Add subtitles if present
                 if segment.get('story_text'):
-                    # Create subtitle generator - key change from old code
                     def create_subtitle(txt):
                         return TextClip(
                             text=txt,
                             font=self.font_path,
-                            font_size=50, 
+                            font_size=50,
                             color='white',
                             stroke_color='black',
                             stroke_width=5,
-                        ).with_position(('center', 0.8))  # Position relative to frame height
-                        
-                    # Create subtitle file
+                        ).with_position(('center', 0.65))
+                    
+                    # Adjust subtitle timing to be slightly faster than audio
+                    adjusted_duration = audio_duration * 0.70  # Make subtitles 5% faster
                     srt_content = self._create_srt_content(
-                        segment['story_text'], 0, duration)
+                        segment['story_text'],
+                        start=0,
+                        duration=adjusted_duration  # Shorter duration for subtitles
+                    )
+                    
                     srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
                     with open(srt_path, 'w', encoding='utf-8') as f:
                         f.write(srt_content)
                     
-                    # Create subtitle clip with generator
                     subtitles = SubtitlesClip(
                         srt_path, 
                         make_textclip=create_subtitle
-                    ).with_duration(duration)
+                    ).with_duration(audio_duration)
 
-                    # Composite with proper layering
                     final_clip = CompositeVideoClip(
                         [video_with_audio, subtitles],
                         size=video_with_audio.size
@@ -247,14 +369,14 @@ class VideoManager:
                 else:
                     final_clip = video_with_audio
 
-                # Write segment with improved settings
                 output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
                 final_clip.write_videofile(
                     output_path,
                     fps=30,
                     codec='libx264',
                     audio_codec='aac',
-                    bitrate='8000k',  # Higher bitrate for quality
+                    bitrate='8000k',
+                    preset='slower',
                     remove_temp=True
                 )
                 

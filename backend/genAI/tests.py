@@ -5,10 +5,14 @@ from langchain_cohere.react_multi_hop.parsing import parse_answer_with_prefixes
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from langsmith import Client
+import base64
 from langsmith.run_helpers import traceable, trace
 import asyncio
 import aiohttp
 import os
+import requests
+import json
+import time
 import logging
 from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
@@ -276,7 +280,198 @@ async def main():
             print(f"Image URL: {iteration['image_url']}")
     finally:
         await story_chain.cleanup()
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+# def test_speech_processing_pipeline(base_url):
+#     """
+#     Test the complete speech processing pipeline without timeouts
+#     """
+#     try:
+#         # 1. Generate speech from text
+#         text_to_speech_url = f"{base_url}/generate-speech"
+#         sample_text = "This is a test of the speech processing system."
+        
+#         logger.info("="*80)
+#         logger.info("Step 1: Generating Speech")
+#         logger.info("="*80)
+#         logger.info(f"Input text: {sample_text}")
+        
+#         # Generate speech
+#         logger.info("Sending speech generation request...")
+#         speech_response = requests.post(
+#             text_to_speech_url,
+#             json={"text": sample_text},
+#             headers={"Content-Type": "application/json"}
+#         )
+        
+#         if not speech_response.ok:
+#             logger.error(f"Speech generation failed: {speech_response.text}")
+#             return
+            
+#         response_data = speech_response.json()
+#         audio_data = response_data.get("audio_data")
+        
+#         if not audio_data:
+#             logger.error("No audio data received")
+#             return
+        
+#         logger.info("✅ Speech generated successfully!")
+#         logger.info(f"Audio data size: {len(audio_data)} bytes")
+        
+#         # 2. Process the generated audio
+#         process_audio_url = f"{base_url}/process-audio"
+        
+#         logger.info("\n" + "="*80)
+#         logger.info("Step 2: Processing Audio")
+#         logger.info("="*80)
+        
+#         # Process audio
+#         logger.info("Sending audio processing request...")
+#         process_response = requests.post(
+#             process_audio_url,
+#             json={"audio_data": audio_data},
+#             headers={"Content-Type": "application/json"}
+#         )
+        
+#         if not process_response.ok:
+#             logger.error(f"Audio processing failed: {process_response.text}")
+#             return
+            
+#         results = process_response.json()
+        
+#         # Display results
+#         logger.info("\n" + "="*80)
+#         logger.info("Step 3: Results")
+#         logger.info("="*80)
+        
+#         if results.get("error"):
+#             logger.error(f"Error from server: {results['error']}")
+#             return
+        
+#         # Language detection
+#         if results.get("detected_language"):
+#             logger.info(f"\nDetected language: {results['detected_language']}")
+#             logger.info(f"Language probability: {results['language_probability']:.2%}")
+        
+#         # Word-level results
+#         if results.get("word_level"):
+#             logger.info(f"\nWord-level timestamps ({len(results['word_level'])} words):")
+#             logger.info("-"*50)
+#             for i, word in enumerate(results['word_level'][:10]):
+#                 logger.info(f"{i+1:2d}. {word['word']:<15} [{word['start']:.2f}s -> {word['end']:.2f}s]")
+#             if len(results['word_level']) > 10:
+#                 logger.info("... (showing first 10 words only)")
+        
+#         # Line-level results
+#         if results.get("line_level"):
+#             logger.info(f"\nLine-level timestamps ({len(results['line_level'])} lines):")
+#             logger.info("-"*50)
+#             for i, line in enumerate(results['line_level']):
+#                 logger.info(f"\nLine {i+1}:")
+#                 logger.info(f"Text: {line['text']}")
+#                 logger.info(f"Time: [{line['start']:.2f}s -> {line['end']:.2f}s]")
+#                 logger.info(f"Words in line: {len(line['words'])}")
+        
+#         # Save results
+#         with open('complete_results.json', 'w') as f:
+#             json.dump(results, f, indent=2)
+#         logger.info("\n✅ Complete results saved to: complete_results.json")
+        
+#     except Exception as e:
+#         logger.error(f"Test failed: {str(e)}")
+#         import traceback
+#         traceback.print_exc()
+
+# if __name__ == "__main__":
+#     import sys
+    
+#     if len(sys.argv) > 1:
+#         base_url = sys.argv[1]
+#     else:
+#         base_url = "https://ef76-34-126-71-138.ngrok-free.app"  # Default URL
+    
+#     logger.info(f"Testing API at: {base_url}")
+#     logger.info("Waiting for server to be ready...")
+#     time.sleep(2)
+    
+#     test_speech_processing_pipeline(base_url)
+
+
+
+
+
+
+
+
+
+
+
+
+def test_whisper_api(base_url):
+    """Test the Whisper transcription API"""
+    try:
+        logger.info("Testing Whisper API")
+        logger.info(f"Base URL: {base_url}")
+        # logger.info(f"WAV file: {wav_file_path}")
+        
+        # # Prepare the file for upload
+        # with open(wav_file_path, 'rb') as f:
+        #     files = {'file': (wav_file_path, f, 'audio/wav')}
+            
+            # Send request
+        logger.info("Sending request...")
+        response = requests.post(
+            f"{base_url}/process-audio",
+            # files=files
+        )
+        
+        if not response.ok:
+            logger.error(f"Request failed: {response.text}")
+            return
+            
+        # Process results
+        results = response.json()
+        
+        # Save complete results
+        with open('api_results.json', 'w') as f:
+            json.dump(results, f, indent=2)
+        logger.info("Results saved to api_results.json")
+        
+        # Display sample of results
+        if results.get("word_level"):
+            logger.info("\nFirst 5 words:")
+            for word in results["word_level"][:5]:
+                logger.info(f"Word: {word['word']:<15} [{word['start']:.2f}s -> {word['end']:.2f}s]")
+        
+        if results.get("line_level"):
+            logger.info("\nFirst 2 lines:")
+            for line in results["line_level"][:2]:
+                logger.info(f"\nLine: {line['text']}")
+                logger.info(f"Time: [{line['start']:.2f}s -> {line['end']:.2f}s]")
+        
+    except Exception as e:
+        logger.error(f"Test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    # import sys
+    
+    # if len(sys.argv) != 3:
+    #     print("Usage: python test_script.py [base_url] [wav_file_path]")
+    #     sys.exit(1)
+        
+    # base_url = sys.argv[1]
+    # wav_file_path = sys.argv[2]
+    
+    test_whisper_api("https://5bea-34-126-71-138.ngrok-free.app")

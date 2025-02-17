@@ -1,0 +1,112 @@
+{
+  "detected_language": "en",
+  "language_probability": 0.99462890625,
+  "line_level": [
+    {
+      "end": 2.64,
+      "start": 0.0,
+      "text": "This is a test of the speech processing",
+      "words": [
+        {
+          "end": 0.18,
+          "start": 0.0,
+          "word": "This"
+        },
+        {
+          "end": 0.28,
+          "start": 0.18,
+          "word": "is"
+        },
+        {
+          "end": 0.4,
+          "start": 0.28,
+          "word": "a"
+        },
+        {
+          "end": 0.8,
+          "start": 0.4,
+          "word": "test"
+        },
+        {
+          "end": 1.72,
+          "start": 0.8,
+          "word": "of"
+        },
+        {
+          "end": 1.94,
+          "start": 1.72,
+          "word": "the"
+        },
+        {
+          "end": 2.18,
+          "start": 1.94,
+          "word": "speech"
+        },
+        {
+          "end": 2.64,
+          "start": 2.18,
+          "word": "processing"
+        }
+      ]
+    },
+    {
+      "end": 3.16,
+      "start": 2.64,
+      "text": "system.",
+      "words": [
+        {
+          "end": 3.16,
+          "start": 2.64,
+          "word": "system."
+        }
+      ]
+    }
+  ],
+  "word_level": [
+    {
+      "end": 0.18,
+      "start": 0.0,
+      "word": "This"
+    },
+    {
+      "end": 0.28,
+      "start": 0.18,
+      "word": "is"
+    },
+    {
+      "end": 0.4,
+      "start": 0.28,
+      "word": "a"
+    },
+    {
+      "end": 0.8,
+      "start": 0.4,
+      "word": "test"
+    },
+    {
+      "end": 1.72,
+      "start": 0.8,
+      "word": "of"
+    },
+    {
+      "end": 1.94,
+      "start": 1.72,
+      "word": "the"
+    },
+    {
+      "end": 2.18,
+      "start": 1.94,
+      "word": "speech"
+    },
+    {
+      "end": 2.64,
+      "start": 2.18,
+      "word": "processing"
+    },
+    {
+      "end": 3.16,
+      "start": 2.64,
+      "word": "system."
+    }
+  ]
+}

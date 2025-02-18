@@ -492,16 +492,16 @@ def test_audio_generation(base_url):
         
         # Send request
         response = requests.post(
-            f"{base_url}/audio-process",
+            f"{base_url}/generate_sound",
             json={
                 "text": test_text,
-                "type": "generate"
             },
             headers={"Content-Type": "application/json"},
             timeout=500
         )
         
         if response.ok:
+            print("WORKED SOUND GENERATION!!!!")
             logger.info("✓ API test successful - got valid response")
             logger.info(f"Status code: {response.status_code}")
         else:
@@ -533,9 +533,8 @@ def test_whisper_api(base_url, wav_file_path):
         # Send request
         logger.info("Sending request...")
         response = requests.post(
-            f"{base_url}/audio-process",
-            json={"audio_data": audio_base64,
-                  "type": "transcribe"},
+            f"{base_url}/process_audio",
+            json={"audio_data": audio_base64,},
             headers={"Content-Type": "application/json"}
         )
         
@@ -578,5 +577,5 @@ if __name__ == "__main__":
     # base_url = sys.argv[1]
     # wav_file_path = sys.argv[2]
     
-    test_audio_generation("https://4c27-34-90-137-27.ngrok-free.app")
-    # test_whisper_api("https://4c27-34-90-137-27.ngrok-free.app", "./temp_audio_1305.wav")
+    test_audio_generation("https://73d3-35-204-183-178.ngrok-free.app")
+    test_whisper_api("https://851d-35-240-242-60.ngrok-free.app", "./temp_audio_1305.wav")

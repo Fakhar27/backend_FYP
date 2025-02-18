@@ -129,14 +129,14 @@ class VideoManager:
         return f"{hours:02d}:{minutes:02d}:{int(seconds):02d},{milliseconds:03d}"
 
     
-    # async def get_synchronized_subtitles(self, audio_data: str, voice_url: str) -> Dict:
+    # async def get_synchronized_subtitles(self, audio_data: str, whisper_url: str) -> Dict:
     #     """Get synchronized subtitles for audio using Whisper API"""
     #     try:
     #         logger.info("Getting synchronized subtitles from Whisper API")
             
     #         async with aiohttp.ClientSession() as session:
     #             async with session.post(
-    #                 f"{voice_url}/audio-process",
+    #                 f"{whisper_url}/audio-process",
     #                 json={"audio_data": audio_data,
     #                       "type": "transcribe"},
     #                 headers={"Content-Type": "application/json"}
@@ -150,7 +150,7 @@ class VideoManager:
                     
     #     except Exception as e:
     #         raise VideoProcessingError(f"Failed to get synchronized subtitles: {e}")
-    async def get_synchronized_subtitles(self, audio_data: str, voice_url: str, session: aiohttp.ClientSession) -> Dict:
+    async def get_synchronized_subtitles(self, audio_data: str, whisper_url: str, session: aiohttp.ClientSession) -> Dict:
         """Get synchronized subtitles for audio using Whisper API"""
         try:
             logger.info("Getting synchronized subtitles from Whisper API")
@@ -161,10 +161,9 @@ class VideoManager:
             
             # Use the provided session
             async with session.post(
-                f"{voice_url}/audio-process",
+                f"{whisper_url}/process_audio",
                 json={
                     "audio_data": audio_data,
-                    "type": "transcribe"
                 },
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=30)  # Add timeout
@@ -190,7 +189,7 @@ class VideoManager:
             raise VideoProcessingError(f"Failed to get synchronized subtitles: {str(e)}")
 
     
-    async def create_segment(self, segment: Dict, index: int, voice_url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None) -> str:
+    async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None) -> str:
         """Create a video segment with dynamically synchronized subtitles"""
         logger.info(f"Creating segment {index}")
         final_clip = None
@@ -203,13 +202,13 @@ class VideoManager:
             audio_path = self._save_base64_audio(segment['audio_data'], index)
             image_array = self._decode_base64_image(segment['image_data'])
             
-            # Get synchronized subtitles if voice_url is provided
+            # Get synchronized subtitles if whisper_url is provided
             subtitle_data = None
-            if voice_url and segment.get('audio_data'):
+            if whisper_url and segment.get('audio_data'):
                 try:
                     subtitle_data = await self.get_synchronized_subtitles(
                         segment['audio_data'],
-                        voice_url,
+                        whisper_url,
                         session
                     )
                 except Exception as e:
@@ -283,7 +282,7 @@ class VideoManager:
                 except:
                     pass
     
-    # async def create_segment(self, segment: Dict, index: int, voice_url: Optional[str] = None) -> str:
+    # async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None) -> str:
     #     """Create a video segment with dynamically synchronized subtitles"""
     #     logger.info(f"Creating segment {index}")
         
@@ -292,12 +291,12 @@ class VideoManager:
     #         audio_path = self._save_base64_audio(segment['audio_data'], index)
     #         image_array = self._decode_base64_image(segment['image_data'])
             
-    #         # Get synchronized subtitles if voice_url is provided
+    #         # Get synchronized subtitles if whisper_url is provided
     #         subtitle_data = None
-    #         if voice_url and segment.get('audio_data'):
+    #         if whisper_url and segment.get('audio_data'):
     #             subtitle_data = await self.get_synchronized_subtitles(
     #                 segment['audio_data'], 
-    #                 voice_url
+    #                 whisper_url
     #             )
             
     #         with AudioFileClip(audio_path) as audio_clip:

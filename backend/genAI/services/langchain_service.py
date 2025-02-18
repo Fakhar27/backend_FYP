@@ -63,7 +63,7 @@ class TokenUsageCallback(BaseCallbackHandler):
         logger.error(f"LLM error occurred: {str(error)}")
 
 class StoryIterationChain:
-    def __init__(self, colab_url: Optional[str] = None, voice_url: Optional[str] = None):
+    def __init__(self, colab_url: Optional[str] = None, voice_url: Optional[str] = None, whisper_url: Optional[str] = None):
         self.token_callback = TokenUsageCallback()
         self.client = Client()
         
@@ -76,6 +76,7 @@ class StoryIterationChain:
         
         self.colab_url = colab_url or os.getenv("COLAB_URL")
         self.voice_url = voice_url or os.getenv("COLAB_URL_2")
+        self.whisper_url = whisper_url or os.getenv("COLAB_URL_3")
         self._session = None
         self._session_refs = 0
         
@@ -243,10 +244,9 @@ class StoryIterationChain:
                 logger.info(f"Sending voice generation request for text: {text}")
                 
                 async with session.post(
-                    f"{self.voice_url}/audio-process",
-                    json={"text": text,
-                          "type": "generate"},
-                    timeout=aiohttp.ClientTimeout(total=120)  
+                    f"{self.voice_url}/generate_sound",
+                    json={"text": text,},
+                    timeout=aiohttp.ClientTimeout(total=300)  
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()
@@ -339,7 +339,7 @@ class StoryIterationChain:
                         }
                         
                         # Process segment
-                        await video_manager.create_segment(segment_data, i, voice_url=self.voice_url, session=session)
+                        await video_manager.create_segment(segment_data, i, whisper_url=self.whisper_url, session=session)
                         
                         previous_content = iteration_result
                         

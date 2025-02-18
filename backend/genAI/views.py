@@ -37,6 +37,7 @@ co = cohere.Client(os.getenv("CO_API_KEY"))
 # headers = {"Authorization": "Bearer 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"}
 COLAB_URL = "https://87c7-35-185-226-172.ngrok-free.app"
 COLAB_URL_2 = ""
+COLAB_URL_3 = ""
 # OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 # if not OPENAI_API_KEY:
 #     logger.warning("OPENAI_API_KEY environment variable not set")
@@ -79,6 +80,22 @@ def update_ngrok_url_voice(request):
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
     return JsonResponse({"error": "Invalid method"}, status=405)
+
+@csrf_exempt
+def update_ngrok_url_whisper(request):
+    """ENDPOINT FOR NGROK COLAB NOTEBOOK FOR WHISPER SOUND PROCESSING"""
+    global COLAB_URL_3
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            ngrok_url = data.get("ngrok_url")
+            if ngrok_url:
+                COLAB_URL_3 = ngrok_url
+                return JsonResponse({"message": "URL updated successfully"})
+            return JsonResponse({"error": "No URL provided"}, status=400)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+    return JsonResponse({"error": "Invalid method"}, status=405)
     
 langchain_service = None
 story_chain_service = None
@@ -103,8 +120,8 @@ def generate_content(request):
             logger.info(f"Raw request data: {request.body}")
             
             # Validate required services
-            if not COLAB_URL or not COLAB_URL_2:
-                logger.error("COLAB_URL or COLAB_URL_2 not set")
+            if not COLAB_URL or not COLAB_URL_2 or not COLAB_URL_3:
+                logger.error("COLAB_URL or COLAB_URL_2 or COLAB_URL_3 not set")
                 return JsonResponse({
                     "error": "Required services not configured. Update URLs first."
                 }, status=500)
@@ -115,7 +132,7 @@ def generate_content(request):
                 logger.info(f"Parsed request data: {data}")
 
                 # Validate iterations range
-                iterations = data.get("iterations", 2)
+                iterations = data.get("iterations", 4)
                 if iterations < 1 or iterations > 10:
                     return JsonResponse({
                         "error": "Iterations must be between 1 and 10"

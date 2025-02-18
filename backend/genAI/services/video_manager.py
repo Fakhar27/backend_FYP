@@ -7,6 +7,8 @@ import numpy as np
 from PIL import Image
 import io
 from datetime import timedelta
+import asyncio
+import aiohttp
 from moviepy import *
 from moviepy.video.tools.subtitles import SubtitlesClip
 from contextlib import contextmanager
@@ -72,60 +74,7 @@ class VideoManager:
             raise VideoProcessingError(f"Failed to save audio: {e}")
 
     
-    # def _create_srt_content(self, text: str, start: float, duration: float) -> str:
-    #     """Generate better formatted SRT content"""
-    #     def format_time(seconds: float) -> str:
-    #         td = timedelta(seconds=seconds)
-    #         hours = td.seconds // 3600
-    #         minutes = (td.seconds % 3600) // 60
-    #         seconds = td.seconds % 60
-    #         ms = round(td.microseconds / 1000)
-    #         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{ms:03d}"
-
-    #     # Split long text into multiple subtitles if needed
-    #     words = text.split()
-    #     chunks = []
-    #     current_chunk = []
-        
-    #     for word in words:
-    #         current_chunk.append(word)
-    #         if len(' '.join(current_chunk)) > 40:  # Max chars per line
-    #             chunks.append(' '.join(current_chunk[:-1]))
-    #             current_chunk = [word]
-    #     if current_chunk:
-    #         chunks.append(' '.join(current_chunk))
-
-    #     # Create SRT entries
-    #     srt_parts = []
-    #     chunk_duration = duration / len(chunks)
-        
-    #     for i, chunk in enumerate(chunks, 1):
-    #         chunk_start = start + (i-1) * chunk_duration
-    #         chunk_end = chunk_start + chunk_duration
-    #         srt_parts.append(
-    #             f"{i}\n"
-    #             f"{format_time(chunk_start)} --> {format_time(chunk_end)}\n"
-    #             f"{chunk}\n"
-    #         )
-
-    #     return "\n".join(srt_parts)
-
-    # @contextmanager
-    # def _create_clips(self, image_array: np.ndarray, audio_path: str, duration: float):
-    #     """Context manager for creating and cleaning up clips"""
-    #     clips = []
-    #     try:
-    #         video_clip = ImageClip(image_array).with_duration(duration)
-    #         audio_clip = AudioFileClip(audio_path)
-    #         video_clip = video_clip.with_audio(audio_clip)
-    #         clips.extend([video_clip, audio_clip])
-    #         yield video_clip, audio_clip
-    #     finally:
-    #         for clip in clips:
-    #             try:
-    #                 clip.close()
-    #             except Exception as e:
-    #                 logger.error(f"Error closing clip: {e}")
+    
     def _create_srt_content(self, text: str, start: float, duration: float) -> str:
         def format_time(seconds: float) -> str:
             td = timedelta(seconds=max(0, seconds))
@@ -170,7 +119,118 @@ class VideoManager:
             current_time = chunk_end
 
         return "\n".join(srt_parts)
+    
+    def _format_time(self, seconds: float) -> str:
+        """Format seconds into SRT timestamp format"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        seconds = seconds % 60
+        milliseconds = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{int(seconds):02d},{milliseconds:03d}"
 
+    
+    async def get_synchronized_subtitles(self, audio_data: str, voice_url: str) -> Dict:
+        """Get synchronized subtitles for audio using Whisper API"""
+        try:
+            logger.info("Getting synchronized subtitles from Whisper API")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{voice_url}/audio-process",
+                    json={"audio_data": audio_data,
+                          "type": "transcribe"},
+                    headers={"Content-Type": "application/json"}
+                ) as response:
+                    if response.status != 200:
+                        raise VideoProcessingError(f"Whisper API error: {await response.text()}")
+                    
+                    transcription_data = await response.json()
+                    logger.info("Received transcription data from Whisper API")
+                    return transcription_data
+                    
+        except Exception as e:
+            raise VideoProcessingError(f"Failed to get synchronized subtitles: {e}")
+
+    async def create_segment(self, segment: Dict, index: int, voice_url: Optional[str] = None) -> str:
+        """Create a video segment with dynamically synchronized subtitles"""
+        logger.info(f"Creating segment {index}")
+        
+        try:
+            # Process audio and image
+            audio_path = self._save_base64_audio(segment['audio_data'], index)
+            image_array = self._decode_base64_image(segment['image_data'])
+            
+            # Get synchronized subtitles if voice_url is provided
+            subtitle_data = None
+            if voice_url and segment.get('audio_data'):
+                subtitle_data = await self.get_synchronized_subtitles(
+                    segment['audio_data'], 
+                    voice_url
+                )
+            
+            with AudioFileClip(audio_path) as audio_clip:
+                duration = audio_clip.duration
+                
+                # Create base video
+                video_clip = ImageClip(image_array).with_duration(duration)
+                video_with_audio = video_clip.with_audio(audio_clip)
+                
+                # Add subtitles if present
+                if subtitle_data and subtitle_data.get('line_level'):
+                    def create_subtitle(txt):
+                        return TextClip(
+                            text=txt,
+                            font=self.font_path,
+                            font_size=50, 
+                            color='white',
+                            stroke_color='black',
+                            stroke_width=5,
+                        ).with_position(('center', 0.8))
+                    
+                    # Create SRT content from Whisper's line-level data
+                    srt_content = ""
+                    for i, line in enumerate(subtitle_data['line_level'], 1):
+                        start_time = self._format_time(line['start'])
+                        end_time = self._format_time(line['end'])
+                        srt_content += f"{i}\n{start_time} --> {end_time}\n{line['text']}\n\n"
+                    
+                    srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
+                    with open(srt_path, 'w', encoding='utf-8') as f:
+                        f.write(srt_content)
+                    
+                    # Create subtitle clip with precise timing
+                    subtitles = SubtitlesClip(
+                        srt_path, 
+                        make_textclip=create_subtitle
+                    ).with_duration(duration)
+                    
+                    # Composite with proper layering
+                    final_clip = CompositeVideoClip(
+                        [video_with_audio, subtitles],
+                        size=video_with_audio.size
+                    )
+                else:
+                    final_clip = video_with_audio
+                
+                # Write segment
+                output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+                final_clip.write_videofile(
+                    output_path,
+                    fps=30,
+                    codec='libx264',
+                    audio_codec='aac',
+                    bitrate='8000k',
+                    remove_temp=True
+                )
+                
+                self.segments.append(output_path)
+                return output_path
+                
+        except Exception as e:
+            raise VideoProcessingError(f"Failed to create segment {index}: {e}")
+        finally:
+            if 'final_clip' in locals():
+                final_clip.close()
     
     
     # def create_segment(self, segment: Dict, index: int) -> str:
@@ -242,7 +302,68 @@ class VideoManager:
     #     finally:
     #         if 'final_clip' in locals():
     #             final_clip.close()
-    # def create_segment(self, segment: Dict, index: int) -> str:
+    
+    
+
+    def concatenate_segments(self) -> str:
+        """Concatenate all segments into final video"""
+        if not self.segments:
+            raise VideoProcessingError("No segments to concatenate")
+
+        try:
+            clips = [VideoFileClip(path) for path in self.segments]
+            final_video = concatenate_videoclips(clips)
+            output_path = os.path.join(self.temp_dir, 'final_video.mp4')
+            
+            final_video.write_videofile(
+                output_path,
+                fps=30,
+                codec='libx264',
+                audio_codec='aac',
+                remove_temp=True
+            )
+            
+            return output_path
+            
+        except Exception as e:
+            raise VideoProcessingError(f"Failed to concatenate segments: {e}")
+        finally:
+            for clip in clips:
+                try:
+                    clip.close()
+                except Exception:
+                    pass
+
+    def cleanup(self):
+        """Clean up temporary files and directory"""
+        try:
+            # Remove segment files
+            for segment in self.segments:
+                if os.path.exists(segment):
+                    os.remove(segment)
+            
+            # Remove temp directory
+            if os.path.exists(self.temp_dir):
+                import shutil
+                shutil.rmtree(self.temp_dir, ignore_errors=True)
+                
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup()
+
+
+
+
+
+
+
+
+# def create_segment(self, segment: Dict, index: int) -> str:
     #     logger.info(f"Creating segment {index}")
         
     #     try:
@@ -319,129 +440,63 @@ class VideoManager:
     #     finally:
     #         if 'final_clip' in locals():
     #             final_clip.close()
-    def create_segment(self, segment: Dict, index: int) -> str:
-        logger.info(f"Creating segment {index}")
+
+
+
+# def _create_srt_content(self, text: str, start: float, duration: float) -> str:
+    #     """Generate better formatted SRT content"""
+    #     def format_time(seconds: float) -> str:
+    #         td = timedelta(seconds=seconds)
+    #         hours = td.seconds // 3600
+    #         minutes = (td.seconds % 3600) // 60
+    #         seconds = td.seconds % 60
+    #         ms = round(td.microseconds / 1000)
+    #         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{ms:03d}"
+
+    #     # Split long text into multiple subtitles if needed
+    #     words = text.split()
+    #     chunks = []
+    #     current_chunk = []
         
-        try:
-            # Process audio and image
-            audio_path = self._save_base64_audio(segment['audio_data'], index)
-            image_array = self._decode_base64_image(segment['image_data'])
-            
-            with AudioFileClip(audio_path) as audio_clip:
-                audio_duration = audio_clip.duration
-                
-                # Create video clip matching audio duration
-                video_clip = ImageClip(image_array).with_duration(audio_duration)
-                video_with_audio = video_clip.with_audio(audio_clip)
-                
-                if segment.get('story_text'):
-                    def create_subtitle(txt):
-                        return TextClip(
-                            text=txt,
-                            font=self.font_path,
-                            font_size=50,
-                            color='white',
-                            stroke_color='black',
-                            stroke_width=5,
-                        ).with_position(('center', 0.65))
-                    
-                    # Adjust subtitle timing to be slightly faster than audio
-                    adjusted_duration = audio_duration * 0.70  # Make subtitles 5% faster
-                    srt_content = self._create_srt_content(
-                        segment['story_text'],
-                        start=0,
-                        duration=adjusted_duration  # Shorter duration for subtitles
-                    )
-                    
-                    srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
-                    with open(srt_path, 'w', encoding='utf-8') as f:
-                        f.write(srt_content)
-                    
-                    subtitles = SubtitlesClip(
-                        srt_path, 
-                        make_textclip=create_subtitle
-                    ).with_duration(audio_duration)
+    #     for word in words:
+    #         current_chunk.append(word)
+    #         if len(' '.join(current_chunk)) > 40:  # Max chars per line
+    #             chunks.append(' '.join(current_chunk[:-1]))
+    #             current_chunk = [word]
+    #     if current_chunk:
+    #         chunks.append(' '.join(current_chunk))
 
-                    final_clip = CompositeVideoClip(
-                        [video_with_audio, subtitles],
-                        size=video_with_audio.size
-                    )
-                else:
-                    final_clip = video_with_audio
+    #     # Create SRT entries
+    #     srt_parts = []
+    #     chunk_duration = duration / len(chunks)
+        
+    #     for i, chunk in enumerate(chunks, 1):
+    #         chunk_start = start + (i-1) * chunk_duration
+    #         chunk_end = chunk_start + chunk_duration
+    #         srt_parts.append(
+    #             f"{i}\n"
+    #             f"{format_time(chunk_start)} --> {format_time(chunk_end)}\n"
+    #             f"{chunk}\n"
+    #         )
 
-                output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
-                final_clip.write_videofile(
-                    output_path,
-                    fps=30,
-                    codec='libx264',
-                    audio_codec='aac',
-                    bitrate='8000k',
-                    preset='slower',
-                    remove_temp=True
-                )
-                
-                self.segments.append(output_path)
-                return output_path
+    #     return "\n".join(srt_parts)
 
-        except Exception as e:
-            raise VideoProcessingError(f"Failed to create segment {index}: {e}")
-        finally:
-            if 'final_clip' in locals():
-                final_clip.close()
-
-    def concatenate_segments(self) -> str:
-        """Concatenate all segments into final video"""
-        if not self.segments:
-            raise VideoProcessingError("No segments to concatenate")
-
-        try:
-            clips = [VideoFileClip(path) for path in self.segments]
-            final_video = concatenate_videoclips(clips)
-            output_path = os.path.join(self.temp_dir, 'final_video.mp4')
-            
-            final_video.write_videofile(
-                output_path,
-                fps=30,
-                codec='libx264',
-                audio_codec='aac',
-                remove_temp=True
-            )
-            
-            return output_path
-            
-        except Exception as e:
-            raise VideoProcessingError(f"Failed to concatenate segments: {e}")
-        finally:
-            for clip in clips:
-                try:
-                    clip.close()
-                except Exception:
-                    pass
-
-    def cleanup(self):
-        """Clean up temporary files and directory"""
-        try:
-            # Remove segment files
-            for segment in self.segments:
-                if os.path.exists(segment):
-                    os.remove(segment)
-            
-            # Remove temp directory
-            if os.path.exists(self.temp_dir):
-                import shutil
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
-                
-        except Exception as e:
-            logger.error(f"Cleanup error: {e}")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.cleanup()
-
-
-
+    # @contextmanager
+    # def _create_clips(self, image_array: np.ndarray, audio_path: str, duration: float):
+    #     """Context manager for creating and cleaning up clips"""
+    #     clips = []
+    #     try:
+    #         video_clip = ImageClip(image_array).with_duration(duration)
+    #         audio_clip = AudioFileClip(audio_path)
+    #         video_clip = video_clip.with_audio(audio_clip)
+    #         clips.extend([video_clip, audio_clip])
+    #         yield video_clip, audio_clip
+    #     finally:
+    #         for clip in clips:
+    #             try:
+    #                 clip.close()
+    #             except Exception as e:
+    #                 logger.error(f"Error closing clip: {e}")
 
 
 

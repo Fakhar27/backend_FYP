@@ -243,8 +243,9 @@ class StoryIterationChain:
                 logger.info(f"Sending voice generation request for text: {text}")
                 
                 async with session.post(
-                    f"{self.voice_url}/generate-speech",
-                    json={"text": text},
+                    f"{self.voice_url}/audio-process",
+                    json={"text": text,
+                          "type": "generate"},
                     timeout=aiohttp.ClientTimeout(total=120)  
                 ) as response:
                     response.raise_for_status()
@@ -337,7 +338,7 @@ class StoryIterationChain:
                         }
                         
                         # Process segment
-                        video_manager.create_segment(segment_data, i)
+                        await video_manager.create_segment(segment_data, i, voice_url=self.voice_url)
                         
                         previous_content = iteration_result
                         

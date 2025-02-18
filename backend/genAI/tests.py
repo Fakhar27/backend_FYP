@@ -502,8 +502,9 @@ def test_whisper_api(base_url, wav_file_path):
         # Send request
         logger.info("Sending request...")
         response = requests.post(
-            f"{base_url}/process-audio",
-            json={"audio_data": audio_base64},
+            f"{base_url}/audio-process",
+            json={"audio_data": audio_base64,
+                  "type": "transcribe"},
             headers={"Content-Type": "application/json"}
         )
         
@@ -546,4 +547,4 @@ if __name__ == "__main__":
     # base_url = sys.argv[1]
     # wav_file_path = sys.argv[2]
     
-    test_whisper_api("https://90ff-34-124-140-154.ngrok-free.app", "./temp_audio_1305.wav")
+    test_whisper_api("https://9aaa-34-19-39-114.ngrok-free.app", "./temp_audio_1305.wav")

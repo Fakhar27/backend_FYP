@@ -481,7 +481,38 @@ async def main():
 
 
 
-
+def test_audio_generation(base_url):
+    """Simple test for the audio generation API endpoint"""
+    try:
+        logger.info("Testing Audio Generation API")
+        logger.info(f"Base URL: {base_url}")
+        
+        # Simple test text
+        test_text = "This is a test for audio generation."
+        
+        # Send request
+        response = requests.post(
+            f"{base_url}/audio-process",
+            json={
+                "text": test_text,
+                "type": "generate"
+            },
+            headers={"Content-Type": "application/json"},
+            timeout=500
+        )
+        
+        if response.ok:
+            logger.info("✓ API test successful - got valid response")
+            logger.info(f"Status code: {response.status_code}")
+        else:
+            logger.error(f"✗ API test failed")
+            logger.error(f"Status: {response.status_code}")
+            logger.error(f"Response: {response.text}")
+            
+    except Exception as e:
+        logger.error(f"Test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 def test_whisper_api(base_url, wav_file_path):
@@ -547,4 +578,5 @@ if __name__ == "__main__":
     # base_url = sys.argv[1]
     # wav_file_path = sys.argv[2]
     
-    test_whisper_api("https://9aaa-34-19-39-114.ngrok-free.app", "./temp_audio_1305.wav")
+    test_audio_generation("https://4c27-34-90-137-27.ngrok-free.app")
+    # test_whisper_api("https://4c27-34-90-137-27.ngrok-free.app", "./temp_audio_1305.wav")

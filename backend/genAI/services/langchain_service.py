@@ -291,6 +291,7 @@ class StoryIterationChain:
         ) as run:
             video_manager = None
             try:
+                session = await self.get_session()
                 video_manager = VideoManager()
                 previous_content = None
                 
@@ -338,7 +339,7 @@ class StoryIterationChain:
                         }
                         
                         # Process segment
-                        await video_manager.create_segment(segment_data, i, voice_url=self.voice_url)
+                        await video_manager.create_segment(segment_data, i, voice_url=self.voice_url, session=session)
                         
                         previous_content = iteration_result
                         

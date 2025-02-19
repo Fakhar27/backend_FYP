@@ -578,4 +578,4 @@ if __name__ == "__main__":
     # wav_file_path = sys.argv[2]
     
     test_audio_generation("https://73d3-35-204-183-178.ngrok-free.app")
-    test_whisper_api("https://851d-35-240-242-60.ngrok-free.app", "./temp_audio_1305.wav")
+    test_whisper_api("https://ea62-34-16-212-86.ngrok-free.app", "./temp_audio_1305.wav")

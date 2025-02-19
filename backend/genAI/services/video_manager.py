@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 import io
 from datetime import timedelta
+import json
 import asyncio
 import aiohttp
 from moviepy import *
@@ -129,217 +130,293 @@ class VideoManager:
         return f"{hours:02d}:{minutes:02d}:{int(seconds):02d},{milliseconds:03d}"
 
     
-    # async def get_synchronized_subtitles(self, audio_data: str, whisper_url: str) -> Dict:
-    #     """Get synchronized subtitles for audio using Whisper API"""
-    #     try:
-    #         logger.info("Getting synchronized subtitles from Whisper API")
-            
-    #         async with aiohttp.ClientSession() as session:
-    #             async with session.post(
-    #                 f"{whisper_url}/audio-process",
-    #                 json={"audio_data": audio_data,
-    #                       "type": "transcribe"},
-    #                 headers={"Content-Type": "application/json"}
-    #             ) as response:
-    #                 if response.status != 200:
-    #                     raise VideoProcessingError(f"Whisper API error: {await response.text()}")
-                    
-    #                 transcription_data = await response.json()
-    #                 logger.info("Received transcription data from Whisper API")
-    #                 return transcription_data
-                    
-    #     except Exception as e:
-    #         raise VideoProcessingError(f"Failed to get synchronized subtitles: {e}")
     async def get_synchronized_subtitles(self, audio_data: str, whisper_url: str, session: aiohttp.ClientSession) -> Dict:
         """Get synchronized subtitles for audio using Whisper API"""
         try:
-            logger.info("Getting synchronized subtitles from Whisper API")
+            logger.info(f"Starting subtitle request to Whisper API at URL: {whisper_url}")
+            print(f"Attempting to call Whisper API at: {whisper_url}")
+            
+            # Log audio data length for debugging
+            print(f"Audio data length before processing: {len(audio_data)}")
             
             # Ensure audio_data is properly formatted
             if ',' in audio_data:
                 audio_data = audio_data.split('base64,')[1]
+                print(f"Audio data length after base64 split: {len(audio_data)}")
+            
+            logger.info("Preparing API request...")
+            print("Preparing to send request to Whisper API...")
             
             # Use the provided session
-            async with session.post(
-                f"{whisper_url}/process_audio",
-                json={
-                    "audio_data": audio_data,
-                },
-                headers={"Content-Type": "application/json"},
-                timeout=aiohttp.ClientTimeout(total=30)  # Add timeout
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Whisper API error: {error_text}")
-                    raise VideoProcessingError(f"Whisper API error: {error_text}")
-                
-                transcription_data = await response.json()
-                
-                if not transcription_data or 'line_level' not in transcription_data:
-                    raise VideoProcessingError("Invalid transcription data received")
+            try:
+                async with session.post(
+                    f"{whisper_url}/process_audio",
+                    json={
+                        "audio_data": audio_data,
+                    },
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=500)
+                ) as response:
+                    logger.info(f"Received response from Whisper API. Status: {response.status}")
+                    print(f"Whisper API Response Status: {response.status}")
                     
-                logger.info("Successfully received transcription data from Whisper API")
-                return transcription_data
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Whisper API error response: {error_text}")
+                        print(f"Error from Whisper API: {error_text}")
+                        raise VideoProcessingError(f"Whisper API error: {error_text}")
                     
-        except aiohttp.ClientError as e:
-            logger.error(f"Network error while getting subtitles: {str(e)}")
-            raise VideoProcessingError(f"Network error: {str(e)}")
+                    logger.info("Successfully got response, parsing JSON...")
+                    print("Parsing Whisper API response...")
+                    
+                    transcription_data = await response.json()
+                    print("\n=== Whisper API Response Data ===")
+                    print(json.dumps(transcription_data, indent=2))
+                    print("===============================\n")
+                    
+                    if not transcription_data:
+                        logger.error("Received empty transcription data")
+                        print("Warning: Empty transcription data received")
+                        raise VideoProcessingError("Empty transcription data received")
+                    
+                    if 'line_level' not in transcription_data:
+                        logger.error(f"Missing line_level in response. Keys received: {transcription_data.keys()}")
+                        print(f"Missing required data. Keys in response: {transcription_data.keys()}")
+                        raise VideoProcessingError("Invalid transcription data: missing line_level")
+                    
+                    logger.info(f"Successfully processed transcription data with {len(transcription_data['line_level'])} lines")
+                    print(f"Found {len(transcription_data['line_level'])} lines of transcription")
+                    
+                    return transcription_data
+                        
+            except aiohttp.ClientError as e:
+                logger.error(f"Network error during API call: {str(e)}")
+                print(f"Network error occurred: {str(e)}")
+                raise VideoProcessingError(f"Network error: {str(e)}")
+                
         except Exception as e:
-            logger.error(f"Failed to get synchronized subtitles: {str(e)}")
+            logger.error(f"Unexpected error in get_synchronized_subtitles: {str(e)}")
+            print(f"Error getting subtitles: {str(e)}")
             raise VideoProcessingError(f"Failed to get synchronized subtitles: {str(e)}")
 
-    
-    async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None) -> str:
+    def create_word_level_subtitles(self, whisper_data: Dict, frame_size: tuple, duration: float) -> List:
+        """Creates word-level synchronized subtitle clips"""
+        
+        def create_word_clip(word_data, is_highlight=False):
+            return TextClip(
+                text=word_data['word'].strip(),
+                font=self.font_path,
+                fontsize=int(frame_size[1] * 0.075),  # 7.5% of frame height
+                color='yellow' if is_highlight else 'white',
+                stroke_color='black',
+                stroke_width=2
+            ).with_duration(duration)
+
+        word_clips = []
+        x_pos = frame_size[0] * 0.1  # 10% margin
+        y_pos = frame_size[1] * 0.8  # 80% down the frame
+        line_width = 0
+        max_width = frame_size[0] * 0.8  # 80% of frame width
+
+        # Process each line from whisper data
+        for line in whisper_data['line_level']:
+            for word_data in line['words']:
+                # Create base (white) word clip
+                base_clip = create_word_clip(word_data)
+                word_width = base_clip.size[0]
+                
+                # Handle line breaks
+                if line_width + word_width > max_width:
+                    x_pos = frame_size[0] * 0.1
+                    y_pos += base_clip.size[1] + 10
+                    line_width = 0
+                
+                # Position and time the base clip
+                base_clip = base_clip.with_position((x_pos, y_pos))
+                
+                # Create and position the highlight clip
+                highlight_clip = (create_word_clip(word_data, is_highlight=True)
+                    .with_position((x_pos, y_pos))
+                    .with_start(word_data['start'])
+                    .with_duration(word_data['end'] - word_data['start']))
+                
+                word_clips.extend([base_clip, highlight_clip])
+                
+                # Update position for next word
+                x_pos += word_width + 10  # Add space between words
+                line_width += word_width + 10
+
+        return word_clips
+
+    async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, 
+                        session: Optional[aiohttp.ClientSession] = None) -> str:
         """Create a video segment with dynamically synchronized subtitles"""
-        logger.info(f"Creating segment {index}")
+        logger.info(f"Creating segment {index} with Whisper URL: {whisper_url}")
+        print(f"\n=== Starting Segment {index} Creation ===")
+        print(f"Whisper URL provided: {whisper_url}")
         final_clip = None
         
+        if not whisper_url:
+            logger.error("No Whisper URL provided")
+            print("Error: Missing Whisper URL")
+            raise VideoProcessingError("Whisper URL is required for subtitle generation")
+        
         if not session:
+            logger.error("No session provided")
+            print("Error: Session is required")
             raise VideoProcessingError("Session is required for subtitle generation")
             
         try:
-            # Process audio and image
+            print(f"Segment {index} data contains:")
+            print(f"- Audio data length: {len(segment['audio_data']) if 'audio_data' in segment else 'Missing'}")
+            print(f"- Image data length: {len(segment['image_data']) if 'image_data' in segment else 'Missing'}")
+            print(f"- Story text length: {len(segment['story_text']) if 'story_text' in segment else 'Missing'}")
+            print(f"Processing segment {index} audio and image...")
+            logger.info("Processing audio and image files")
+            
             audio_path = self._save_base64_audio(segment['audio_data'], index)
+            print(f"Audio saved to: {audio_path}")
+            
             image_array = self._decode_base64_image(segment['image_data'])
+            print("Image decoded successfully")
             
             # Get synchronized subtitles if whisper_url is provided
-            subtitle_data = None
+            whisper_data = None
             if whisper_url and segment.get('audio_data'):
+                print(f"\nAttempting to get subtitles from Whisper API...")
+                logger.info(f"Whisper URL provided: {whisper_url}")
+                
                 try:
-                    subtitle_data = await self.get_synchronized_subtitles(
+                    whisper_data = await self.get_synchronized_subtitles(
                         segment['audio_data'],
                         whisper_url,
                         session
                     )
+                    print("Successfully received whisper data")
                 except Exception as e:
-                    logger.error(f"Failed to get subtitles, continuing without them: {str(e)}")
+                    logger.error(f"Subtitle generation failed: {str(e)}")
+                    print(f"Failed to get subtitles: {str(e)}")
+            else:
+                print("No Whisper URL provided or no audio data in segment")
+                logger.warning("Skipping subtitle generation - missing URL or audio data")
             
             # Create clips
-            audio_clip = AudioFileClip(audio_path)
-            duration = audio_clip.duration
-            
-            # Create base video
-            video_clip = ImageClip(image_array).with_duration(duration)
-            video_with_audio = video_clip.with_audio(audio_clip)
-            
-            # Add subtitles if present
-            if subtitle_data and subtitle_data.get('line_level'):
-                def create_subtitle(txt):
-                    return TextClip(
-                        txt,
-                        font=self.font_path or 'Arial',
-                        fontsize=40,
-                        color='white',
-                        stroke_color='black',
-                        stroke_width=2,
-                        method='caption',
-                        size=video_clip.size
-                    ).with_position(('center', 'bottom'))
+            print("\nCreating video clips...")
+            with AudioFileClip(audio_path) as audio_clip:
+                duration = audio_clip.duration
+                print(f"Audio duration: {duration} seconds")
                 
-                # Create SRT content
-                srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
-                with open(srt_path, 'w', encoding='utf-8') as f:
-                    for i, line in enumerate(subtitle_data['line_level'], 1):
-                        start_time = self._format_time(line['start'])
-                        end_time = self._format_time(line['end'])
-                        f.write(f"{i}\n{start_time} --> {end_time}\n{line['text']}\n\n")
+                video_clip = ImageClip(image_array).with_duration(duration)
+                video_with_audio = video_clip.with_audio(audio_clip)
                 
-                subtitles = SubtitlesClip(
-                    srt_path,
-                    make_textclip=create_subtitle
+                if whisper_data and whisper_data.get('line_level'):
+                    print("Creating subtitle clips...")
+                    
+                    # Create semi-transparent background
+                    bg_clip = (ColorClip(size=video_clip.size, color=(64, 64, 64))
+                        .with_opacity(0.6)
+                        .with_duration(duration))
+                    
+                    # Create word-level subtitles
+                    subtitle_clips = self.create_word_level_subtitles(
+                        whisper_data,
+                        video_clip.size,
+                        duration
+                    )
+                    print(f"Created {len(subtitle_clips)} subtitle clips")
+                    
+                    # Combine everything
+                    final_clip = CompositeVideoClip([
+                        video_with_audio,
+                        bg_clip.with_position(('center', 'bottom')),
+                        *subtitle_clips
+                    ])
+                    print("Composite video created with subtitles")
+                else:
+                    final_clip = video_with_audio
+                    print("Created video without subtitles")
+                
+                # Write segment
+                output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+                print(f"\nWriting video to: {output_path}")
+                
+                final_clip.write_videofile(
+                    output_path,
+                    fps=24,
+                    codec='libx264',
+                    audio_codec='aac',
+                    threads=4,
+                    preset='medium',
+                    remove_temp=True
                 )
                 
-                final_clip = CompositeVideoClip(
-                    [video_with_audio, subtitles.with_duration(duration)],
-                    size=video_with_audio.size
-                )
-            else:
-                final_clip = video_with_audio
-            
-            # Write segment
-            output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
-            final_clip.write_videofile(
-                output_path,
-                fps=24,
-                codec='libx264',
-                audio_codec='aac',
-                threads=4,
-                preset='medium',
-                remove_temp=True
-            )
-            
-            self.segments.append(output_path)
-            return output_path
-            
+                self.segments.append(output_path)
+                print(f"Segment {index} completed successfully")
+                return output_path
+                
         except Exception as e:
-            logger.error(f"Failed to create segment {index}: {str(e)}")
+            logger.error(f"Segment {index} creation failed: {str(e)}")
+            print(f"Error creating segment {index}: {str(e)}")
             raise VideoProcessingError(f"Failed to create segment {index}: {str(e)}")
         finally:
-            # Clean up resources
+            print(f"=== Finishing Segment {index} Creation ===\n")
             if final_clip:
                 try:
                     final_clip.close()
+                    print(f"Cleaned up resources for segment {index}")
                 except:
-                    pass
-    
-    # async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None) -> str:
+                    print(f"Warning: Could not clean up resources for segment {index}")
+    # async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, 
+    #                         session: Optional[aiohttp.ClientSession] = None) -> str:
     #     """Create a video segment with dynamically synchronized subtitles"""
     #     logger.info(f"Creating segment {index}")
+    #     final_clip = None
         
+    #     if not session:
+    #         raise VideoProcessingError("Session is required for subtitle generation")
+            
     #     try:
     #         # Process audio and image
     #         audio_path = self._save_base64_audio(segment['audio_data'], index)
     #         image_array = self._decode_base64_image(segment['image_data'])
             
     #         # Get synchronized subtitles if whisper_url is provided
-    #         subtitle_data = None
+    #         whisper_data = None
     #         if whisper_url and segment.get('audio_data'):
-    #             subtitle_data = await self.get_synchronized_subtitles(
-    #                 segment['audio_data'], 
-    #                 whisper_url
-    #             )
+    #             try:
+    #                 whisper_data = await self.get_synchronized_subtitles(
+    #                     segment['audio_data'],
+    #                     whisper_url,
+    #                     session
+    #                 )
+    #             except Exception as e:
+    #                 logger.error(f"Failed to get subtitles, continuing without them: {str(e)}")
             
+    #         # Create clips
     #         with AudioFileClip(audio_path) as audio_clip:
     #             duration = audio_clip.duration
-                
-    #             # Create base video
     #             video_clip = ImageClip(image_array).with_duration(duration)
     #             video_with_audio = video_clip.with_audio(audio_clip)
                 
-    #             # Add subtitles if present
-    #             if subtitle_data and subtitle_data.get('line_level'):
-    #                 def create_subtitle(txt):
-    #                     return TextClip(
-    #                         text=txt,
-    #                         font=self.font_path,
-    #                         font_size=50, 
-    #                         color='white',
-    #                         stroke_color='black',
-    #                         stroke_width=5,
-    #                     ).with_position(('center', 0.8))
+    #             if whisper_data and whisper_data.get('line_level'):
+    #                 # Create semi-transparent background for subtitles
+    #                 bg_clip = (ColorClip(size=video_clip.size, color=(64, 64, 64))
+    #                     .with_opacity(0.6)
+    #                     .with_duration(duration))
                     
-    #                 # Create SRT content from Whisper's line-level data
-    #                 srt_content = ""
-    #                 for i, line in enumerate(subtitle_data['line_level'], 1):
-    #                     start_time = self._format_time(line['start'])
-    #                     end_time = self._format_time(line['end'])
-    #                     srt_content += f"{i}\n{start_time} --> {end_time}\n{line['text']}\n\n"
-                    
-    #                 srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
-    #                 with open(srt_path, 'w', encoding='utf-8') as f:
-    #                     f.write(srt_content)
-                    
-    #                 # Create subtitle clip with precise timing
-    #                 subtitles = SubtitlesClip(
-    #                     srt_path, 
-    #                     make_textclip=create_subtitle
-    #                 ).with_duration(duration)
-                    
-    #                 # Composite with proper layering
-    #                 final_clip = CompositeVideoClip(
-    #                     [video_with_audio, subtitles],
-    #                     size=video_with_audio.size
+    #                 # Create word-level subtitles
+    #                 subtitle_clips = self.create_word_level_subtitles(
+    #                     whisper_data,
+    #                     video_clip.size,
+    #                     duration
     #                 )
+                    
+    #                 # Combine everything
+    #                 final_clip = CompositeVideoClip([
+    #                     video_with_audio,
+    #                     bg_clip.with_position(('center', 'bottom')),
+    #                     *subtitle_clips
+    #                 ])
     #             else:
     #                 final_clip = video_with_audio
                 
@@ -347,10 +424,11 @@ class VideoManager:
     #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
     #             final_clip.write_videofile(
     #                 output_path,
-    #                 fps=30,
+    #                 fps=24,
     #                 codec='libx264',
     #                 audio_codec='aac',
-    #                 bitrate='8000k',
+    #                 threads=4,
+    #                 preset='medium',
     #                 remove_temp=True
     #             )
                 
@@ -358,81 +436,16 @@ class VideoManager:
     #             return output_path
                 
     #     except Exception as e:
-    #         raise VideoProcessingError(f"Failed to create segment {index}: {e}")
+    #         logger.error(f"Failed to create segment {index}: {str(e)}")
+    #         raise VideoProcessingError(f"Failed to create segment {index}: {str(e)}")
     #     finally:
-    #         if 'final_clip' in locals():
-    #             final_clip.close()
+    #         # Clean up resources
+    #         if final_clip:
+    #             try:
+    #                 final_clip.close()
+    #             except:
+    #                 pass
     
-    
-    # def create_segment(self, segment: Dict, index: int) -> str:
-    #     """Create a video segment with dynamic subtitles"""
-    #     logger.info(f"Creating segment {index}")
-        
-    #     try:
-    #         # Process audio and image
-    #         audio_path = self._save_base64_audio(segment['audio_data'], index)
-    #         image_array = self._decode_base64_image(segment['image_data'])
-            
-    #         with AudioFileClip(audio_path) as audio_clip:
-    #             duration = audio_clip.duration
-                
-    #             # Create base video
-    #             video_clip = ImageClip(image_array).with_duration(duration)
-    #             video_with_audio = video_clip.with_audio(audio_clip)
-                
-    #             # Add subtitles if present
-    #             if segment.get('story_text'):
-    #                 # Create subtitle generator - key change from old code
-    #                 def create_subtitle(txt):
-    #                     return TextClip(
-    #                         text=txt,
-    #                         font=self.font_path,
-    #                         font_size=50, 
-    #                         color='white',
-    #                         stroke_color='black',
-    #                         stroke_width=5,
-    #                     ).with_position(('center', 0.8))  # Position relative to frame height
-                        
-    #                 # Create subtitle file
-    #                 srt_content = self._create_srt_content(
-    #                     segment['story_text'], 0, duration)
-    #                 srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
-    #                 with open(srt_path, 'w', encoding='utf-8') as f:
-    #                     f.write(srt_content)
-                    
-    #                 # Create subtitle clip with generator
-    #                 subtitles = SubtitlesClip(
-    #                     srt_path, 
-    #                     make_textclip=create_subtitle
-    #                 ).with_duration(duration)
-
-    #                 # Composite with proper layering
-    #                 final_clip = CompositeVideoClip(
-    #                     [video_with_audio, subtitles],
-    #                     size=video_with_audio.size
-    #                 )
-    #             else:
-    #                 final_clip = video_with_audio
-
-    #             # Write segment with improved settings
-    #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
-    #             final_clip.write_videofile(
-    #                 output_path,
-    #                 fps=30,
-    #                 codec='libx264',
-    #                 audio_codec='aac',
-    #                 bitrate='8000k',  # Higher bitrate for quality
-    #                 remove_temp=True
-    #             )
-                
-    #             self.segments.append(output_path)
-    #             return output_path
-
-    #     except Exception as e:
-    #         raise VideoProcessingError(f"Failed to create segment {index}: {e}")
-    #     finally:
-    #         if 'final_clip' in locals():
-    #             final_clip.close()
     
     
 
@@ -1959,3 +1972,290 @@ class VideoManager:
                 
 #         except Exception as e:
 #             logger.error(f"Error during cleanup: {str(e)}")
+
+
+# --------------------------------WORKS CODE-------------------------------------
+# async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None) -> str:
+    #     """Create a video segment with dynamically synchronized subtitles"""
+    #     logger.info(f"Creating segment {index}")
+    #     final_clip = None
+        
+    #     if not session:
+    #         raise VideoProcessingError("Session is required for subtitle generation")
+            
+    #     try:
+    #         # Process audio and image
+    #         audio_path = self._save_base64_audio(segment['audio_data'], index)
+    #         image_array = self._decode_base64_image(segment['image_data'])
+            
+    #         # Get synchronized subtitles if whisper_url is provided
+    #         subtitle_data = None
+    #         if whisper_url and segment.get('audio_data'):
+    #             try:
+    #                 subtitle_data = await self.get_synchronized_subtitles(
+    #                     segment['audio_data'],
+    #                     whisper_url,
+    #                     session
+    #                 )
+    #             except Exception as e:
+    #                 logger.error(f"Failed to get subtitles, continuing without them: {str(e)}")
+            
+    #         # Create clips
+    #         audio_clip = AudioFileClip(audio_path)
+    #         duration = audio_clip.duration
+            
+    #         # Create base video
+    #         video_clip = ImageClip(image_array).with_duration(duration)
+    #         video_with_audio = video_clip.with_audio(audio_clip)
+            
+    #         # Add subtitles if present
+    #         if subtitle_data and subtitle_data.get('line_level'):
+    #             def create_subtitle(txt):
+    #                 return TextClip(
+    #                     txt,
+    #                     font=self.font_path or 'Arial',
+    #                     fontsize=40,
+    #                     color='white',
+    #                     stroke_color='black',
+    #                     stroke_width=2,
+    #                     method='caption',
+    #                     size=video_clip.size
+    #                 ).with_position(('center', 'bottom'))
+                
+    #             # Create SRT content
+    #             srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
+    #             with open(srt_path, 'w', encoding='utf-8') as f:
+    #                 for i, line in enumerate(subtitle_data['line_level'], 1):
+    #                     start_time = self._format_time(line['start'])
+    #                     end_time = self._format_time(line['end'])
+    #                     f.write(f"{i}\n{start_time} --> {end_time}\n{line['text']}\n\n")
+                
+    #             subtitles = SubtitlesClip(
+    #                 srt_path,
+    #                 make_textclip=create_subtitle
+    #             )
+                
+    #             final_clip = CompositeVideoClip(
+    #                 [video_with_audio, subtitles.with_duration(duration)],
+    #                 size=video_with_audio.size
+    #             )
+    #         else:
+    #             final_clip = video_with_audio
+            
+    #         # Write segment
+    #         output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+    #         final_clip.write_videofile(
+    #             output_path,
+    #             fps=24,
+    #             codec='libx264',
+    #             audio_codec='aac',
+    #             threads=4,
+    #             preset='medium',
+    #             remove_temp=True
+    #         )
+            
+    #         self.segments.append(output_path)
+    #         return output_path
+            
+    #     except Exception as e:
+    #         logger.error(f"Failed to create segment {index}: {str(e)}")
+    #         raise VideoProcessingError(f"Failed to create segment {index}: {str(e)}")
+    #     finally:
+    #         # Clean up resources
+    #         if final_clip:
+    #             try:
+    #                 final_clip.close()
+    #             except:
+    #                 pass
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # ------------------------------------------------
+    
+    # async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None) -> str:
+    #     """Create a video segment with dynamically synchronized subtitles"""
+    #     logger.info(f"Creating segment {index}")
+        
+    #     try:
+    #         # Process audio and image
+    #         audio_path = self._save_base64_audio(segment['audio_data'], index)
+    #         image_array = self._decode_base64_image(segment['image_data'])
+            
+    #         # Get synchronized subtitles if whisper_url is provided
+    #         subtitle_data = None
+    #         if whisper_url and segment.get('audio_data'):
+    #             subtitle_data = await self.get_synchronized_subtitles(
+    #                 segment['audio_data'], 
+    #                 whisper_url
+    #             )
+            
+    #         with AudioFileClip(audio_path) as audio_clip:
+    #             duration = audio_clip.duration
+                
+    #             # Create base video
+    #             video_clip = ImageClip(image_array).with_duration(duration)
+    #             video_with_audio = video_clip.with_audio(audio_clip)
+                
+    #             # Add subtitles if present
+    #             if subtitle_data and subtitle_data.get('line_level'):
+    #                 def create_subtitle(txt):
+    #                     return TextClip(
+    #                         text=txt,
+    #                         font=self.font_path,
+    #                         font_size=50, 
+    #                         color='white',
+    #                         stroke_color='black',
+    #                         stroke_width=5,
+    #                     ).with_position(('center', 0.8))
+                    
+    #                 # Create SRT content from Whisper's line-level data
+    #                 srt_content = ""
+    #                 for i, line in enumerate(subtitle_data['line_level'], 1):
+    #                     start_time = self._format_time(line['start'])
+    #                     end_time = self._format_time(line['end'])
+    #                     srt_content += f"{i}\n{start_time} --> {end_time}\n{line['text']}\n\n"
+                    
+    #                 srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
+    #                 with open(srt_path, 'w', encoding='utf-8') as f:
+    #                     f.write(srt_content)
+                    
+    #                 # Create subtitle clip with precise timing
+    #                 subtitles = SubtitlesClip(
+    #                     srt_path, 
+    #                     make_textclip=create_subtitle
+    #                 ).with_duration(duration)
+                    
+    #                 # Composite with proper layering
+    #                 final_clip = CompositeVideoClip(
+    #                     [video_with_audio, subtitles],
+    #                     size=video_with_audio.size
+    #                 )
+    #             else:
+    #                 final_clip = video_with_audio
+                
+    #             # Write segment
+    #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+    #             final_clip.write_videofile(
+    #                 output_path,
+    #                 fps=30,
+    #                 codec='libx264',
+    #                 audio_codec='aac',
+    #                 bitrate='8000k',
+    #                 remove_temp=True
+    #             )
+                
+    #             self.segments.append(output_path)
+    #             return output_path
+                
+    #     except Exception as e:
+    #         raise VideoProcessingError(f"Failed to create segment {index}: {e}")
+    #     finally:
+    #         if 'final_clip' in locals():
+    #             final_clip.close()
+    
+    
+    # def create_segment(self, segment: Dict, index: int) -> str:
+    #     """Create a video segment with dynamic subtitles"""
+    #     logger.info(f"Creating segment {index}")
+        
+    #     try:
+    #         # Process audio and image
+    #         audio_path = self._save_base64_audio(segment['audio_data'], index)
+    #         image_array = self._decode_base64_image(segment['image_data'])
+            
+    #         with AudioFileClip(audio_path) as audio_clip:
+    #             duration = audio_clip.duration
+                
+    #             # Create base video
+    #             video_clip = ImageClip(image_array).with_duration(duration)
+    #             video_with_audio = video_clip.with_audio(audio_clip)
+                
+    #             # Add subtitles if present
+    #             if segment.get('story_text'):
+    #                 # Create subtitle generator - key change from old code
+    #                 def create_subtitle(txt):
+    #                     return TextClip(
+    #                         text=txt,
+    #                         font=self.font_path,
+    #                         font_size=50, 
+    #                         color='white',
+    #                         stroke_color='black',
+    #                         stroke_width=5,
+    #                     ).with_position(('center', 0.8))  # Position relative to frame height
+                        
+    #                 # Create subtitle file
+    #                 srt_content = self._create_srt_content(
+    #                     segment['story_text'], 0, duration)
+    #                 srt_path = os.path.join(self.temp_dir, f'sub_{index}.srt')
+    #                 with open(srt_path, 'w', encoding='utf-8') as f:
+    #                     f.write(srt_content)
+                    
+    #                 # Create subtitle clip with generator
+    #                 subtitles = SubtitlesClip(
+    #                     srt_path, 
+    #                     make_textclip=create_subtitle
+    #                 ).with_duration(duration)
+
+    #                 # Composite with proper layering
+    #                 final_clip = CompositeVideoClip(
+    #                     [video_with_audio, subtitles],
+    #                     size=video_with_audio.size
+    #                 )
+    #             else:
+    #                 final_clip = video_with_audio
+
+    #             # Write segment with improved settings
+    #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+    #             final_clip.write_videofile(
+    #                 output_path,
+    #                 fps=30,
+    #                 codec='libx264',
+    #                 audio_codec='aac',
+    #                 bitrate='8000k',  # Higher bitrate for quality
+    #                 remove_temp=True
+    #             )
+                
+    #             self.segments.append(output_path)
+    #             return output_path
+
+    #     except Exception as e:
+    #         raise VideoProcessingError(f"Failed to create segment {index}: {e}")
+    #     finally:
+    #         if 'final_clip' in locals():
+    #             final_clip.close()
+    
+    
+    
+    
+    
+    
+    
+    
+    # async def get_synchronized_subtitles(self, audio_data: str, whisper_url: str) -> Dict:
+    #     """Get synchronized subtitles for audio using Whisper API"""
+    #     try:
+    #         logger.info("Getting synchronized subtitles from Whisper API")
+            
+    #         async with aiohttp.ClientSession() as session:
+    #             async with session.post(
+    #                 f"{whisper_url}/audio-process",
+    #                 json={"audio_data": audio_data,
+    #                       "type": "transcribe"},
+    #                 headers={"Content-Type": "application/json"}
+    #             ) as response:
+    #                 if response.status != 200:
+    #                     raise VideoProcessingError(f"Whisper API error: {await response.text()}")
+                    
+    #                 transcription_data = await response.json()
+    #                 logger.info("Received transcription data from Whisper API")
+    #                 return transcription_data
+                    
+    #     except Exception as e:
+    #         raise VideoProcessingError(f"Failed to get synchronized subtitles: {e}")

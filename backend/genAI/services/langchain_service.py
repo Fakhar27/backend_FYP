@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import base64
 from langchain_cohere.react_multi_hop.parsing import parse_answer_with_prefixes
 from langchain_core.callbacks import BaseCallbackHandler
+import json
 from langchain_core.outputs import LLMResult
 from langsmith import Client
 from langsmith.run_helpers import traceable, trace
@@ -291,6 +292,8 @@ class StoryIterationChain:
         ) as run:
             video_manager = None
             try:
+                logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
+                print(f"Using Whisper endpoint: {self.whisper_url}")
                 session = await self.get_session()
                 video_manager = VideoManager()
                 previous_content = None
@@ -299,7 +302,18 @@ class StoryIterationChain:
                     logger.info(f"Starting iteration {i + 1}")
                     
                     try:
-                        # Generate story and image description
+                        print(f"\n=== Processing Iteration {i + 1} ===")
+                        logger.info(f"Starting iteration {i + 1} with Whisper URL: {self.whisper_url}")
+                        
+                        # Log segment data structure
+                        # print(f"Segment data keys: {segment_data.keys()}")
+                        # logger.info(f"Segment {i} data structure: {json.dumps({k: bool(v) for k, v in segment_data.items()})}")
+                        
+                        # Add explicit check for URL
+                        if not self.whisper_url:
+                            logger.error("Whisper URL is not set!")
+                            print("Error: Missing Whisper URL configuration")
+                        
                         iteration_result = await self.generate_iteration(
                             input_text=request.prompt if i == 0 else "", 
                             genre=request.genre,

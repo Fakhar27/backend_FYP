@@ -102,11 +102,11 @@ story_chain_service = None
 
 
 def get_story_chain_service():
-    global story_chain_service, COLAB_URL, COLAB_URL_2
+    global story_chain_service, COLAB_URL, COLAB_URL_2, COLAB_URL_3
     
-    if story_chain_service is None or story_chain_service.colab_url != COLAB_URL or story_chain_service.voice_url != COLAB_URL_2:
+    if story_chain_service is None or story_chain_service.colab_url != COLAB_URL or story_chain_service.voice_url != COLAB_URL_2 or story_chain_service.whisper_url != COLAB_URL_3:
         try:
-            story_chain_service = StoryIterationChain(colab_url=COLAB_URL, voice_url=COLAB_URL_2)
+            story_chain_service = StoryIterationChain(colab_url=COLAB_URL, voice_url=COLAB_URL_2, whisper_url=COLAB_URL_3)
             logger.info("StoryIterationChain service created successfully")
         except Exception as e:
             logger.error(f"Error creating StoryIterationChain service: {str(e)}")

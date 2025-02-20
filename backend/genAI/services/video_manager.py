@@ -31,12 +31,12 @@ class VideoManager:
     def _get_system_font(self) -> str:
         """Get system font path based on OS"""
         font_paths = {
-            'nt': [  # Windows
+            'nt': [  
                 r"C:\Windows\Fonts\Arial.ttf",
                 r"C:\Windows\Fonts\Calibri.ttf",
                 r"C:\Windows\Fonts\segoeui.ttf"
             ],
-            'posix': [  # Linux/Unix
+            'posix': [  
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                 "/usr/share/fonts/TTF/Arial.ttf",
                 "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
@@ -141,15 +141,8 @@ class VideoManager:
         try:
             subtitle_clips = []
             words_data = whisper_data.get('word_level', [])
-            
-            # Method 1: Using relative positioning
-            # Position at center horizontally, and 90% down the frame vertically
             position = ('center', 0.78)
             relative = True
-
-            # Method 2: Using absolute positioning with calculation
-            # bottom_offset = int(frame_size[1] * 0.1)  # 10% from bottom
-            # position = ('center', frame_size[1] - bottom_offset)
             
             for word_data in words_data:
                 word = word_data['word'].strip()
@@ -214,8 +207,6 @@ class VideoManager:
                 
                 video_clip = ImageClip(image_array).with_duration(duration)
                 video_with_audio = video_clip.with_audio(audio_clip)
-                
-                # Get and add subtitles if available
                 try:
                     print(f"\nAttempting to get subtitles from Whisper API...")
                     logger.info(f"Whisper URL provided: {whisper_url}")
@@ -318,12 +309,9 @@ class VideoManager:
     def cleanup(self):
         """Clean up temporary files and directory"""
         try:
-            # Remove segment files
             for segment in self.segments:
                 if os.path.exists(segment):
                     os.remove(segment)
-            
-            # Remove temp directory
             if os.path.exists(self.temp_dir):
                 import shutil
                 shutil.rmtree(self.temp_dir, ignore_errors=True)

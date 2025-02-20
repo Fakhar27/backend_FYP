@@ -305,11 +305,6 @@ class StoryIterationChain:
                         print(f"\n=== Processing Iteration {i + 1} ===")
                         logger.info(f"Starting iteration {i + 1} with Whisper URL: {self.whisper_url}")
                         
-                        # Log segment data structure
-                        # print(f"Segment data keys: {segment_data.keys()}")
-                        # logger.info(f"Segment {i} data structure: {json.dumps({k: bool(v) for k, v in segment_data.items()})}")
-                        
-                        # Add explicit check for URL
                         if not self.whisper_url:
                             logger.error("Whisper URL is not set!")
                             print("Error: Missing Whisper URL configuration")
@@ -320,7 +315,6 @@ class StoryIterationChain:
                             previous_content=previous_content
                         )
                         
-                        # Parallel generation of image and voice
                         image_task = asyncio.create_task(
                             self.generate_image(iteration_result["image"])
                         )
@@ -328,14 +322,12 @@ class StoryIterationChain:
                             self.generate_voice(iteration_result["story"])
                         )
                         
-                        # Wait for both tasks to complete
                         results = await asyncio.gather(
                             image_task, 
                             voice_task, 
                             return_exceptions=True
                         )
                         
-                        # Check for exceptions in gathered results
                         for result in results:
                             if isinstance(result, Exception):
                                 raise result
@@ -345,19 +337,16 @@ class StoryIterationChain:
                         if not image_data or not audio_data:
                             raise ValueError(f"Failed to generate media for iteration {i + 1}")
                         
-                        # Create segment data
                         segment_data = {
                             'image_data': image_data,
                             'audio_data': audio_data,
                             'story_text': iteration_result["story"]
                         }
                         
-                        # Process segment
                         await video_manager.create_segment(segment_data, i, whisper_url=self.whisper_url, session=session)
                         
                         previous_content = iteration_result
                         
-                        # Add metadata for tracking
                         run.add_metadata({
                             f"iteration_{i+1}": {
                                 "story": iteration_result["story"],
@@ -373,11 +362,9 @@ class StoryIterationChain:
                         logger.error(f"Error in iteration {i + 1}: {str(e)}")
                         raise
                 
-                # Concatenate all segments
                 logger.info("Starting video concatenation")
                 final_video_path = video_manager.concatenate_segments()
                 
-                # Read and encode final video
                 logger.info("Encoding final video")
                 with open(final_video_path, 'rb') as video_file:
                     video_base64 = base64.b64encode(video_file.read()).decode('utf-8')

@@ -142,10 +142,20 @@ class VideoManager:
             subtitle_clips = []
             words_data = whisper_data.get('word_level', [])
             
+            # Method 1: Using relative positioning
+            # Position at center horizontally, and 90% down the frame vertically
+            position = ('center', 0.78)
+            relative = True
+
+            # Method 2: Using absolute positioning with calculation
+            # bottom_offset = int(frame_size[1] * 0.1)  # 10% from bottom
+            # position = ('center', frame_size[1] - bottom_offset)
+            
             for word_data in words_data:
                 word = word_data['word'].strip()
                 if not word:
                     continue
+                    
                 word_clip = (TextClip(
                     text=word,
                     font=self.font_path,
@@ -154,7 +164,7 @@ class VideoManager:
                     stroke_color='black',
                     stroke_width=2
                 )
-                .with_position(('center', 'bottom'))
+                .with_position(position, relative=relative)
                 .with_start(word_data['start'])
                 .with_duration(word_data['end'] - word_data['start']))
                 

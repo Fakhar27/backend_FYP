@@ -363,7 +363,12 @@ class StoryIterationChain:
                         raise
                 
                 logger.info("Starting video concatenation")
-                final_video_path = video_manager.concatenate_segments()
+                if os.path.exists("../backgroundMusic1.wav"):
+                    print("PATH OF BACKGROUND MUSIC EXISTS")
+                
+                final_video_path = video_manager.concatenate_segments(
+                    # background_music_path="../backgroundMusic1.wav"
+                )
                 
                 logger.info("Encoding final video")
                 with open(final_video_path, 'rb') as video_file:

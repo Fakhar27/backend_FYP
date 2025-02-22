@@ -26,6 +26,7 @@ class VideoManager:
         self.temp_dir = tempfile.mkdtemp()
         self.segments: List[str] = []
         self.font_path = self._get_system_font()
+        self.transition_duration = 1.0
         logger.info(f"VideoManager initialized with temp dir: {self.temp_dir}")
 
     def _get_system_font(self) -> str:
@@ -245,7 +246,8 @@ class VideoManager:
                     print(f"Failed to create subtitles: {str(e)}")
                     final_clip = video_with_audio
                 
-                # Write output
+                
+                
                 output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
                 print(f"\nWriting video to: {output_path}")
                 
@@ -277,14 +279,70 @@ class VideoManager:
                     print(f"Warning: Could not clean up resources for segment {index}")
     
     
+    # def concatenate_segments(self) -> str:
+    #     """Concatenate all segments into final video"""
+    #     if not self.segments:
+    #         raise VideoProcessingError("No segments to concatenate")
+
+    #     try:
+    #         clips = [VideoFileClip(path) for path in self.segments]
+    #         final_video = concatenate_videoclips(clips)
+    #         output_path = os.path.join(self.temp_dir, 'final_video.mp4')
+            
+    #         final_video.write_videofile(
+    #             output_path,
+    #             fps=30,
+    #             codec='libx264',
+    #             audio_codec='aac',
+    #             remove_temp=True
+    #         )
+            
+    #         return output_path
+            
+    #     except Exception as e:
+    #         raise VideoProcessingError(f"Failed to concatenate segments: {e}")
+    #     finally:
+    #         for clip in clips:
+    #             try:
+    #                 clip.close()
+    #             except Exception:
+    #                 pass
     def concatenate_segments(self) -> str:
-        """Concatenate all segments into final video"""
+        """Concatenate all segments into final video with fade transitions"""
         if not self.segments:
             raise VideoProcessingError("No segments to concatenate")
 
+        clips = []
         try:
-            clips = [VideoFileClip(path) for path in self.segments]
-            final_video = concatenate_videoclips(clips)
+            # Load all segments as VideoFileClips
+            for i, path in enumerate(self.segments):
+                clip = VideoFileClip(path)
+                
+                # Apply fade effects based on position in sequence
+                if i == 0:
+                    # First clip: only fade out
+                    clip = clip.with_effects([
+                        vfx.FadeOut(self.transition_duration)
+                    ])
+                elif i == len(self.segments) - 1:
+                    # Last clip: only fade in
+                    clip = clip.with_effects([
+                        vfx.FadeIn(self.transition_duration)
+                    ])
+                else:
+                    # Middle clips: fade in and fade out
+                    clip = clip.with_effects([
+                        vfx.FadeIn(self.transition_duration),
+                        vfx.FadeOut(self.transition_duration)
+                    ])
+                clips.append(clip)
+
+            # Concatenate with crossfade transitions
+            final_video = concatenate_videoclips(
+                clips,
+                method="compose"  # Enables smooth overlapping transitions
+            )
+            
             output_path = os.path.join(self.temp_dir, 'final_video.mp4')
             
             final_video.write_videofile(
@@ -292,19 +350,29 @@ class VideoManager:
                 fps=30,
                 codec='libx264',
                 audio_codec='aac',
-                remove_temp=True
+                remove_temp=True,
+                threads=4,
+                preset='medium'
             )
             
             return output_path
-            
+
         except Exception as e:
+            logger.error(f"Failed to concatenate segments: {str(e)}")
             raise VideoProcessingError(f"Failed to concatenate segments: {e}")
         finally:
+            # Clean up clips to free memory
             for clip in clips:
                 try:
                     clip.close()
                 except Exception:
-                    pass
+                    logger.warning(f"Failed to close clip: {clip}")
+            if 'final_video' in locals():
+                try:
+                    final_video.close()
+                except Exception:
+                    logger.warning("Failed to close final video")
+    
 
     def cleanup(self):
         """Clean up temporary files and directory"""

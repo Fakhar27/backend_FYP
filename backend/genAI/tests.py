@@ -599,7 +599,71 @@ if __name__ == "__main__":
     
     
     
+# import wave
+# import pyaudio
+# import os
+# import time
+
+# def play_wav_file(file_path):
+#     """Play a WAV file"""
+#     try:
+#         # Open the WAV file
+#         wf = wave.open(file_path, 'rb')
+        
+#         # Initialize PyAudio
+#         p = pyaudio.PyAudio()
+        
+#         # Open stream
+#         stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+#                        channels=wf.getnchannels(),
+#                        rate=wf.getframerate(),
+#                        output=True)
+        
+#         # Read data in chunks and play
+#         chunk_size = 1024
+#         data = wf.readframes(chunk_size)
+        
+#         print(f"\nPlaying: {file_path}")
+#         print("Press Ctrl+C to stop playback")
+        
+#         while data:
+#             stream.write(data)
+#             data = wf.readframes(chunk_size)
+            
+#         # Cleanup
+#         stream.stop_stream()
+#         stream.close()
+#         p.terminate()
+#         wf.close()
+        
+#     except Exception as e:
+#         print(f"Error playing audio: {str(e)}")
+
+# def __main__():
+#     """Test function for audio playback"""
+#     print("RUNNING TESTCASE FUNCTION ONLY")
     
+#     # Define the path to your WAV file
+#     path_of_file = "./backgroundMusic1.wav"
+    
+#     # Check if file exists
+#     if os.path.exists(path_of_file):
+#         print(f"YES {path_of_file} exists")
+#         # Play the WAV file
+#         play_wav_file(path_of_file)
+#     else:
+#         print(f"File not found: {path_of_file}")
+#         # Try looking in parent directory
+#         parent_path = "../backgroundMusic1.wav"
+#         if os.path.exists(parent_path):
+#             print(f"Found file in parent directory: {parent_path}")
+#             play_wav_file(parent_path)
+#         else:
+#             print("Could not find backgroundMusic1.wav in current or parent directory")
+
+# if __name__ == "__main__":
+#     __main__()
+        
     
     
     

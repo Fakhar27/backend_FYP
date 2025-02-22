@@ -75,18 +75,83 @@ class VideoManager:
         except Exception as e:
             raise VideoProcessingError(f"Failed to save audio: {e}")
 
+    # async def get_synchronized_subtitles(self, audio_data: str, whisper_url: str, session: aiohttp.ClientSession) -> Dict:
+    #     """Get synchronized subtitles for audio using Whisper API"""
+    #     try:
+    #         logger.info(f"Starting subtitle request to Whisper API at URL: {whisper_url}")
+    #         print(f"Attempting to call Whisper API at: {whisper_url}")
+    #         print(f"Audio data length before processing: {len(audio_data)}")
+    #         if ',' in audio_data:
+    #             audio_data = audio_data.split('base64,')[1]
+    #             print(f"Audio data length after base64 split: {len(audio_data)}")
+    #         logger.info("Preparing API request...")
+    #         print("Preparing to send request to Whisper API...")
+    #         try:
+    #             async with session.post(
+    #                 f"{whisper_url}/process_audio",
+    #                 json={
+    #                     "audio_data": audio_data,
+    #                 },
+    #                 headers={"Content-Type": "application/json"},
+    #                 timeout=aiohttp.ClientTimeout(total=500)
+    #             ) as response:
+    #                 logger.info(f"Received response from Whisper API. Status: {response.status}")
+    #                 print(f"Whisper API Response Status: {response.status}")
+                    
+    #                 if response.status != 200:
+    #                     error_text = await response.text()
+    #                     logger.error(f"Whisper API error response: {error_text}")
+    #                     print(f"Error from Whisper API: {error_text}")
+    #                     raise VideoProcessingError(f"Whisper API error: {error_text}")
+                    
+    #                 logger.info("Successfully got response, parsing JSON...")
+    #                 print("Parsing Whisper API response...")
+                    
+    #                 transcription_data = await response.json()
+    #                 print("\n=== Whisper API Response Data ===")
+    #                 print(json.dumps(transcription_data, indent=2))
+    #                 print("===============================\n")
+                    
+    #                 if not transcription_data:
+    #                     logger.error("Received empty transcription data")
+    #                     print("Warning: Empty transcription data received")
+    #                     raise VideoProcessingError("Empty transcription data received")
+                    
+    #                 if 'line_level' not in transcription_data:
+    #                     logger.error(f"Missing line_level in response. Keys received: {transcription_data.keys()}")
+    #                     print(f"Missing required data. Keys in response: {transcription_data.keys()}")
+    #                     raise VideoProcessingError("Invalid transcription data: missing line_level")
+                    
+    #                 logger.info(f"Successfully processed transcription data with {len(transcription_data['line_level'])} lines")
+    #                 print(f"Found {len(transcription_data['line_level'])} lines of transcription")
+                    
+    #                 return transcription_data
+                        
+    #         except aiohttp.ClientError as e:
+    #             logger.error(f"Network error during API call: {str(e)}")
+    #             print(f"Network error occurred: {str(e)}")
+    #             raise VideoProcessingError(f"Network error: {str(e)}")
+                
+    #     except Exception as e:
+    #         logger.error(f"Unexpected error in get_synchronized_subtitles: {str(e)}")
+    #         print(f"Error getting subtitles: {str(e)}")
+    #         raise VideoProcessingError(f"Failed to get synchronized subtitles: {str(e)}")
     async def get_synchronized_subtitles(self, audio_data: str, whisper_url: str, session: aiohttp.ClientSession) -> Dict:
         """Get synchronized subtitles for audio using Whisper API"""
         try:
             logger.info(f"Starting subtitle request to Whisper API at URL: {whisper_url}")
             print(f"Attempting to call Whisper API at: {whisper_url}")
             print(f"Audio data length before processing: {len(audio_data)}")
+            
             if ',' in audio_data:
                 audio_data = audio_data.split('base64,')[1]
                 print(f"Audio data length after base64 split: {len(audio_data)}")
+                
             logger.info("Preparing API request...")
             print("Preparing to send request to Whisper API...")
+            
             try:
+                # Use the provided session instead of creating a new one
                 async with session.post(
                     f"{whisper_url}/process_audio",
                     json={
@@ -126,16 +191,16 @@ class VideoManager:
                     print(f"Found {len(transcription_data['line_level'])} lines of transcription")
                     
                     return transcription_data
-                        
+                    
             except aiohttp.ClientError as e:
                 logger.error(f"Network error during API call: {str(e)}")
                 print(f"Network error occurred: {str(e)}")
                 raise VideoProcessingError(f"Network error: {str(e)}")
-                
         except Exception as e:
             logger.error(f"Unexpected error in get_synchronized_subtitles: {str(e)}")
             print(f"Error getting subtitles: {str(e)}")
             raise VideoProcessingError(f"Failed to get synchronized subtitles: {str(e)}")
+
 
     def create_word_level_subtitles(self, whisper_data: Dict, frame_size: tuple, duration: float) -> List:
         """Creates word-level subtitle clips"""
@@ -169,8 +234,9 @@ class VideoManager:
             logger.error(f"Error creating word-level subtitles: {e}")
             return []
 
+    
     async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, 
-                        session: Optional[aiohttp.ClientSession] = None) -> str:
+                           session: Optional[aiohttp.ClientSession] = None) -> str:
         """Create a video segment with dynamically synchronized subtitles"""
         logger.info(f"Creating segment {index} with Whisper URL: {whisper_url}")
         print(f"\n=== Starting Segment {index} Creation ===")
@@ -192,8 +258,6 @@ class VideoManager:
             print(f"- Audio data length: {len(segment['audio_data']) if 'audio_data' in segment else 'Missing'}")
             print(f"- Image data length: {len(segment['image_data']) if 'image_data' in segment else 'Missing'}")
             print(f"- Story text length: {len(segment['story_text']) if 'story_text' in segment else 'Missing'}")
-            print(f"Processing segment {index} audio and image...")
-            logger.info("Processing audio and image files")
             
             audio_path = self._save_base64_audio(segment['audio_data'], index)
             print(f"Audio saved to: {audio_path}")
@@ -208,6 +272,7 @@ class VideoManager:
                 
                 video_clip = ImageClip(image_array).with_duration(duration)
                 video_with_audio = video_clip.with_audio(audio_clip)
+                
                 try:
                     print(f"\nAttempting to get subtitles from Whisper API...")
                     logger.info(f"Whisper URL provided: {whisper_url}")
@@ -215,7 +280,7 @@ class VideoManager:
                     whisper_data = await self.get_synchronized_subtitles(
                         segment['audio_data'],
                         whisper_url,
-                        session
+                        session  # Pass the session through
                     )
                     print("Successfully received whisper data")
                     
@@ -246,8 +311,6 @@ class VideoManager:
                     print(f"Failed to create subtitles: {str(e)}")
                     final_clip = video_with_audio
                 
-                
-                
                 output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
                 print(f"\nWriting video to: {output_path}")
                 
@@ -269,6 +332,7 @@ class VideoManager:
             logger.error(f"Segment {index} creation failed: {str(e)}")
             print(f"Error creating segment {index}: {str(e)}")
             raise VideoProcessingError(f"Failed to create segment {index}: {str(e)}")
+            
         finally:
             print(f"=== Finishing Segment {index} Creation ===\n")
             if final_clip:
@@ -277,36 +341,115 @@ class VideoManager:
                     print(f"Cleaned up resources for segment {index}")
                 except:
                     print(f"Warning: Could not clean up resources for segment {index}")
-    
-    
-    # def concatenate_segments(self) -> str:
-    #     """Concatenate all segments into final video"""
-    #     if not self.segments:
-    #         raise VideoProcessingError("No segments to concatenate")
-
+    # async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, 
+    #                     session: Optional[aiohttp.ClientSession] = None) -> str:
+    #     """Create a video segment with dynamically synchronized subtitles"""
+    #     logger.info(f"Creating segment {index} with Whisper URL: {whisper_url}")
+    #     print(f"\n=== Starting Segment {index} Creation ===")
+    #     print(f"Whisper URL provided: {whisper_url}")
+    #     final_clip = None
+        
+    #     if not whisper_url:
+    #         logger.error("No Whisper URL provided")
+    #         print("Error: Missing Whisper URL")
+    #         raise VideoProcessingError("Whisper URL is required for subtitle generation")
+        
+    #     if not session:
+    #         logger.error("No session provided")
+    #         print("Error: Session is required")
+    #         raise VideoProcessingError("Session is required for subtitle generation")
+            
     #     try:
-    #         clips = [VideoFileClip(path) for path in self.segments]
-    #         final_video = concatenate_videoclips(clips)
-    #         output_path = os.path.join(self.temp_dir, 'final_video.mp4')
+    #         print(f"Segment {index} data contains:")
+    #         print(f"- Audio data length: {len(segment['audio_data']) if 'audio_data' in segment else 'Missing'}")
+    #         print(f"- Image data length: {len(segment['image_data']) if 'image_data' in segment else 'Missing'}")
+    #         print(f"- Story text length: {len(segment['story_text']) if 'story_text' in segment else 'Missing'}")
+    #         print(f"Processing segment {index} audio and image...")
+    #         logger.info("Processing audio and image files")
             
-    #         final_video.write_videofile(
-    #             output_path,
-    #             fps=30,
-    #             codec='libx264',
-    #             audio_codec='aac',
-    #             remove_temp=True
-    #         )
+    #         audio_path = self._save_base64_audio(segment['audio_data'], index)
+    #         print(f"Audio saved to: {audio_path}")
             
-    #         return output_path
+    #         image_array = self._decode_base64_image(segment['image_data'])
+    #         print("Image decoded successfully")
             
-    #     except Exception as e:
-    #         raise VideoProcessingError(f"Failed to concatenate segments: {e}")
-    #     finally:
-    #         for clip in clips:
+    #         print("\nCreating video clips...")
+    #         with AudioFileClip(audio_path) as audio_clip:
+    #             duration = audio_clip.duration
+    #             print(f"Audio duration: {duration} seconds")
+                
+    #             video_clip = ImageClip(image_array).with_duration(duration)
+    #             video_with_audio = video_clip.with_audio(audio_clip)
     #             try:
-    #                 clip.close()
-    #             except Exception:
-    #                 pass
+    #                 print(f"\nAttempting to get subtitles from Whisper API...")
+    #                 logger.info(f"Whisper URL provided: {whisper_url}")
+                    
+    #                 whisper_data = await self.get_synchronized_subtitles(
+    #                     segment['audio_data'],
+    #                     whisper_url,
+    #                     session
+    #                 )
+    #                 print("Successfully received whisper data")
+                    
+    #                 if whisper_data:
+    #                     print("Creating subtitle clips...")
+    #                     subtitle_clips = self.create_word_level_subtitles(
+    #                         whisper_data,
+    #                         video_clip.size,
+    #                         duration
+    #                     )
+                        
+    #                     if subtitle_clips:
+    #                         print(f"Created {len(subtitle_clips)} subtitle clips")
+    #                         final_clip = CompositeVideoClip([
+    #                             video_with_audio,
+    #                             *subtitle_clips
+    #                         ])
+    #                         print("Composite video created with subtitles")
+    #                     else:
+    #                         print("No subtitle clips were created, falling back to video without subtitles")
+    #                         final_clip = video_with_audio
+    #                 else:
+    #                     print("No whisper data received, creating video without subtitles")
+    #                     final_clip = video_with_audio
+                        
+    #             except Exception as e:
+    #                 logger.error(f"Subtitle generation failed: {str(e)}")
+    #                 print(f"Failed to create subtitles: {str(e)}")
+    #                 final_clip = video_with_audio
+                
+                
+                
+    #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+    #             print(f"\nWriting video to: {output_path}")
+                
+    #             final_clip.write_videofile(
+    #                 output_path,
+    #                 fps=24,
+    #                 codec='libx264',
+    #                 audio_codec='aac',
+    #                 threads=4,
+    #                 preset='medium',
+    #                 remove_temp=True
+    #             )
+                
+    #             self.segments.append(output_path)
+    #             print(f"Segment {index} completed successfully")
+    #             return output_path
+                
+    #     except Exception as e:
+    #         logger.error(f"Segment {index} creation failed: {str(e)}")
+    #         print(f"Error creating segment {index}: {str(e)}")
+    #         raise VideoProcessingError(f"Failed to create segment {index}: {str(e)}")
+    #     finally:
+    #         print(f"=== Finishing Segment {index} Creation ===\n")
+    #         if final_clip:
+    #             try:
+    #                 final_clip.close()
+    #                 print(f"Cleaned up resources for segment {index}")
+    #             except:
+    #                 print(f"Warning: Could not clean up resources for segment {index}")
+    
     def concatenate_segments(self) -> str:
         """Concatenate all segments into final video with fade transitions"""
         if not self.segments:

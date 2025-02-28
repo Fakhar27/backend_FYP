@@ -338,22 +338,21 @@ class VideoManager:
     #                 final_video.close()
     #             except Exception:
     #                 logger.warning("Failed to close final video")
-    def concatenate_segments(self, background_music_path=None) -> str:
-        """Concatenate all segments into final video with fade transitions and optional background music
-        
-        Args:
-            background_music_path: Optional path to a background music file (WAV, MP3, etc.)
-            
-        Returns:
-            Path to the final video file
-        """
+    def concatenate_segments(self, background_audio_path) -> str:
+        """Concatenate all segments into final video with fade transitions and background music"""
         if not self.segments:
             raise VideoProcessingError("No segments to concatenate")
 
         clips = []
-        background_audio = None
-        
         try:
+            # Load background audio
+            if os.path.exists(background_audio_path):
+                logger.info(f"Loading background audio from: {background_audio_path}")
+                background_audio = AudioFileClip(background_audio_path)
+            else:
+                logger.warning(f"Background audio file not found at {background_audio_path}")
+                background_audio = None
+
             for i, path in enumerate(self.segments):
                 clip = VideoFileClip(path)
                 
@@ -372,44 +371,33 @@ class VideoManager:
                     ])
                 clips.append(clip)
 
-            # Concatenate video clips
             final_video = concatenate_videoclips(
                 clips,
                 method="compose"  
             )
             
-            # Add background music if specified
-            if background_music_path and os.path.exists(background_music_path):
-                logger.info(f"Adding background music from: {background_music_path}")
-                
-                # Load background music
-                background_audio = AudioFileClip(background_music_path)
-                
-                # Adjust background music volume (lower to not overpower speech)
-                background_audio = background_audio.volumex(0.9)
-                
-                # Loop or trim background music to match video duration
+            # Add background music if available
+            if background_audio is not None:
+                # Loop the background audio if it's shorter than the video
                 if background_audio.duration < final_video.duration:
-                    # If background music is shorter than video, loop it
-                    n_loops = int(final_video.duration / background_audio.duration) + 1
-                    background_audio = concatenate_audioclips([background_audio] * n_loops)
-                
-                background_audio = background_audio.subclip(0, final_video.duration)
-                
-                original_audio = final_video.audio
-                
-                if original_audio:
-                    mixed_audio = CompositeAudioClip([
-                        original_audio,
-                        background_audio
-                    ])
-                    final_video = final_video.with_audio(mixed_audio)
+                    background_audio = afx.audio_loop(
+                        background_audio, 
+                        duration=final_video.duration
+                    )
                 else:
-                    final_video = final_video.with_audio(background_audio)
-                    
-                logger.info("Background music added successfully")
-            else:
-                print("NOT BACKGROUND MUSIC FOUND!!")
+                    # Trim audio if longer than the video
+                    background_audio = background_audio.subclip(0, final_video.duration)
+                
+                # Mix background audio with video audio (video audio at 100%, background at 20%)
+                original_audio = final_video.audio
+                mixed_audio = CompositeAudioClip([
+                    original_audio, 
+                    background_audio.with_volume(0.7)  # Adjust volume level (0.2 = 20%)
+                ])
+                
+                # Set the mixed audio to the final video
+                final_video = final_video.with_audio(mixed_audio)
+                logger.info("Background music added to final video")
             
             output_path = os.path.join(self.temp_dir, 'final_video.mp4')
             
@@ -429,24 +417,21 @@ class VideoManager:
             logger.error(f"Failed to concatenate segments: {str(e)}")
             raise VideoProcessingError(f"Failed to concatenate segments: {e}")
         finally:
-            # Clean up resources
             for clip in clips:
                 try:
                     clip.close()
                 except Exception:
                     logger.warning(f"Failed to close clip: {clip}")
-            
-            if background_audio:
-                try:
-                    background_audio.close()
-                except Exception:
-                    logger.warning("Failed to close background audio")
-                    
             if 'final_video' in locals():
                 try:
                     final_video.close()
                 except Exception:
                     logger.warning("Failed to close final video")
+            if 'background_audio' in locals() and background_audio is not None:
+                try:
+                    background_audio.close()
+                except Exception:
+                    logger.warning("Failed to close background audio")
     
 
     def cleanup(self):

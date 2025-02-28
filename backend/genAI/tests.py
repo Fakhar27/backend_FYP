@@ -478,107 +478,122 @@ async def main():
 
 
 
+def find_all_wav_files(start_path='.'):
+    wav_files = []
+    for root, dirs, files in os.walk(start_path):
+        for file in files:
+            if file.endswith('.wav'):
+                wav_files.append(os.path.join(root, file))
+    return wav_files
+
+# Print the current working directory
+print(f"Current working directory: {os.getcwd()}")
+
+# Find all .wav files
+wav_files = find_all_wav_files()
+print(f"Found {len(wav_files)} .wav files:")
+for file in wav_files:
+    print(f"  - {file} (exists: {os.path.exists(file)})")
 
 
-
-def test_audio_generation(base_url):
-    """Simple test for the audio generation API endpoint"""
-    try:
-        logger.info("Testing Audio Generation API")
-        logger.info(f"Base URL: {base_url}")
+# def test_audio_generation(base_url):
+#     """Simple test for the audio generation API endpoint"""
+#     try:
+#         logger.info("Testing Audio Generation API")
+#         logger.info(f"Base URL: {base_url}")
         
-        # Simple test text
-        test_text = "This is a test for audio generation."
+#         # Simple test text
+#         test_text = "This is a test for audio generation."
         
-        # Send request
-        response = requests.post(
-            f"{base_url}/generate_sound",
-            json={
-                "text": test_text,
-            },
-            headers={"Content-Type": "application/json"},
-            timeout=500
-        )
+#         # Send request
+#         response = requests.post(
+#             f"{base_url}/generate_sound",
+#             json={
+#                 "text": test_text,
+#             },
+#             headers={"Content-Type": "application/json"},
+#             timeout=500
+#         )
         
-        if response.ok:
-            print("WORKED SOUND GENERATION!!!!")
-            logger.info("✓ API test successful - got valid response")
-            logger.info(f"Status code: {response.status_code}")
-        else:
-            logger.error(f"✗ API test failed")
-            logger.error(f"Status: {response.status_code}")
-            logger.error(f"Response: {response.text}")
+#         if response.ok:
+#             print("WORKED SOUND GENERATION!!!!")
+#             logger.info("✓ API test successful - got valid response")
+#             logger.info(f"Status code: {response.status_code}")
+#         else:
+#             logger.error(f"✗ API test failed")
+#             logger.error(f"Status: {response.status_code}")
+#             logger.error(f"Response: {response.text}")
             
-    except Exception as e:
-        logger.error(f"Test failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
+#     except Exception as e:
+#         logger.error(f"Test failed: {str(e)}")
+#         import traceback
+#         traceback.print_exc()
 
 
-def test_whisper_api(base_url, wav_file_path):
-    """Test the Whisper transcription API with base64 encoding"""
-    try:
-        logger.info("Testing Whisper API")
-        logger.info(f"Base URL: {base_url}")
-        logger.info(f"WAV file: {wav_file_path}")
+# def test_whisper_api(base_url, wav_file_path):
+#     """Test the Whisper transcription API with base64 encoding"""
+#     try:
+#         logger.info("Testing Whisper API")
+#         logger.info(f"Base URL: {base_url}")
+#         logger.info(f"WAV file: {wav_file_path}")
         
-        # Read and encode the WAV file
-        logger.info("Reading and encoding WAV file...")
-        with open(wav_file_path, 'rb') as f:
-            audio_data = f.read()
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+#         # Read and encode the WAV file
+#         logger.info("Reading and encoding WAV file...")
+#         with open(wav_file_path, 'rb') as f:
+#             audio_data = f.read()
+#             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         
-        logger.info(f"File encoded (size: {len(audio_base64)} bytes)")
+#         logger.info(f"File encoded (size: {len(audio_base64)} bytes)")
         
-        # Send request
-        logger.info("Sending request...")
-        response = requests.post(
-            f"{base_url}/process_audio",
-            json={"audio_data": audio_base64,},
-            headers={"Content-Type": "application/json"}
-        )
+#         # Send request
+#         logger.info("Sending request...")
+#         response = requests.post(
+#             f"{base_url}/process_audio",
+#             json={"audio_data": audio_base64,},
+#             headers={"Content-Type": "application/json"}
+#         )
         
-        if not response.ok:
-            logger.error(f"Request failed: {response.text}")
-            return
+#         if not response.ok:
+#             logger.error(f"Request failed: {response.text}")
+#             return
             
-        # Process results
-        results = response.json()
+#         # Process results
+#         results = response.json()
         
-        # Save complete results
-        with open('api_results.json', 'w') as f:
-            json.dump(results, f, indent=2)
-        logger.info("Results saved to api_results.json")
+#         # Save complete results
+#         with open('api_results.json', 'w') as f:
+#             json.dump(results, f, indent=2)
+#         logger.info("Results saved to api_results.json")
         
-        # Display sample of results
-        if results.get("word_level"):
-            logger.info("\nFirst 5 words:")
-            for word in results["word_level"][:5]:
-                logger.info(f"Word: {word['word']:<15} [{word['start']:.2f}s -> {word['end']:.2f}s]")
+#         # Display sample of results
+#         if results.get("word_level"):
+#             logger.info("\nFirst 5 words:")
+#             for word in results["word_level"][:5]:
+#                 logger.info(f"Word: {word['word']:<15} [{word['start']:.2f}s -> {word['end']:.2f}s]")
         
-        if results.get("line_level"):
-            logger.info("\nFirst 2 lines:")
-            for line in results["line_level"][:2]:
-                logger.info(f"\nLine: {line['text']}")
-                logger.info(f"Time: [{line['start']:.2f}s -> {line['end']:.2f}s]")
+#         if results.get("line_level"):
+#             logger.info("\nFirst 2 lines:")
+#             for line in results["line_level"][:2]:
+#                 logger.info(f"\nLine: {line['text']}")
+#                 logger.info(f"Time: [{line['start']:.2f}s -> {line['end']:.2f}s]")
         
-    except Exception as e:
-        logger.error(f"Test failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
+#     except Exception as e:
+#         logger.error(f"Test failed: {str(e)}")
+#         import traceback
+#         traceback.print_exc()
 
-if __name__ == "__main__":
-    # import sys
+# if __name__ == "__main__":
+#     # import sys
     
-    # if len(sys.argv) != 3:
-    #     print("Usage: python test_script.py [base_url] [wav_file_path]")
-    #     sys.exit(1)
+#     # if len(sys.argv) != 3:
+#     #     print("Usage: python test_script.py [base_url] [wav_file_path]")
+#     #     sys.exit(1)
         
-    # base_url = sys.argv[1]
-    # wav_file_path = sys.argv[2]
+#     # base_url = sys.argv[1]
+#     # wav_file_path = sys.argv[2]
     
-    # test_audio_generation("https://73d3-35-204-183-178.ngrok-free.app")
-    test_whisper_api("https://ea62-34-16-212-86.ngrok-free.app", "./temp_audio_1305.wav")
+#     # test_audio_generation("https://73d3-35-204-183-178.ngrok-free.app")
+#     test_whisper_api("https://ea62-34-16-212-86.ngrok-free.app", "./temp_audio_1305.wav")
     
     
     

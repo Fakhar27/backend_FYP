@@ -11,6 +11,7 @@ import json
 import asyncio
 import aiohttp
 from moviepy import *
+# from moviepy.audio.fx import afx
 from moviepy.video.tools.subtitles import SubtitlesClip
 from contextlib import contextmanager
 
@@ -345,14 +346,20 @@ class VideoManager:
 
         clips = []
         try:
-            # Load background audio
+            # Load background audio if it exists
+            background_audio = None
             if os.path.exists(background_audio_path):
                 logger.info(f"Loading background audio from: {background_audio_path}")
-                background_audio = AudioFileClip(background_audio_path)
+                try:
+                    background_audio = AudioFileClip(background_audio_path)
+                    logger.info(f"Successfully loaded background audio with duration: {background_audio.duration}s")
+                except Exception as e:
+                    logger.error(f"Error loading background audio: {str(e)}")
+                    background_audio = None
             else:
                 logger.warning(f"Background audio file not found at {background_audio_path}")
-                background_audio = None
 
+            # Load and process video segments
             for i, path in enumerate(self.segments):
                 clip = VideoFileClip(path)
                 
@@ -371,6 +378,7 @@ class VideoManager:
                     ])
                 clips.append(clip)
 
+            # Concatenate video clips
             final_video = concatenate_videoclips(
                 clips,
                 method="compose"  
@@ -378,27 +386,34 @@ class VideoManager:
             
             # Add background music if available
             if background_audio is not None:
-                # Loop the background audio if it's shorter than the video
-                if background_audio.duration < final_video.duration:
-                    background_audio = afx.audio_loop(
-                        background_audio, 
-                        duration=final_video.duration
-                    )
-                else:
-                    # Trim audio if longer than the video
-                    background_audio = background_audio.subclip(0, final_video.duration)
-                
-                # Mix background audio with video audio (video audio at 100%, background at 20%)
-                original_audio = final_video.audio
-                mixed_audio = CompositeAudioClip([
-                    original_audio, 
-                    background_audio.with_volume(0.7)  # Adjust volume level (0.2 = 20%)
-                ])
-                
-                # Set the mixed audio to the final video
-                final_video = final_video.with_audio(mixed_audio)
-                logger.info("Background music added to final video")
+                try:
+                    logger.info(f"Video duration: {final_video.duration}s, Audio duration: {background_audio.duration}s")
+                    
+                    # Trim the audio if it's longer than the video
+                    if background_audio.duration > final_video.duration:
+                        logger.info(f"Trimming background audio to match video duration ({final_video.duration}s)")
+                        
+                        # In MoviePy v2.0, we use with_duration to trim the audio
+                        background_audio = background_audio.with_duration(final_video.duration)
+                        logger.info(f"New background audio duration: {background_audio.duration}s")
+                    
+                    background_audio_adjusted = background_audio.with_effects([afx.MultiplyVolume(0.5)])
+                    
+                    original_audio = final_video.audio
+                    mixed_audio = CompositeAudioClip([
+                        original_audio, 
+                        background_audio_adjusted 
+                    ])
+                    
+                    # Apply the mixed audio to the final video
+                    final_video = final_video.with_audio(mixed_audio)
+                    logger.info("Background music added to final video")
+                except Exception as e:
+                    logger.error(f"Error applying background audio: {str(e)}")
+                    logger.exception("Detailed stacktrace:")
+                    # Continue with original audio if there's an error
             
+            # Write the final video to file
             output_path = os.path.join(self.temp_dir, 'final_video.mp4')
             
             final_video.write_videofile(
@@ -415,8 +430,10 @@ class VideoManager:
 
         except Exception as e:
             logger.error(f"Failed to concatenate segments: {str(e)}")
+            logger.exception("Detailed stacktrace:")
             raise VideoProcessingError(f"Failed to concatenate segments: {e}")
         finally:
+            # Clean up resources
             for clip in clips:
                 try:
                     clip.close()

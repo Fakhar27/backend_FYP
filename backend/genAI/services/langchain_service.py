@@ -331,7 +331,9 @@ class StoryIterationChain:
                             raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
                     
                     logger.info("Starting video concatenation")
-                    final_video_path = video_manager.concatenate_segments()
+                    final_video_path = video_manager.concatenate_segments(
+                        background_music_path="../backgroundMusic1.wav"
+                    )
                     
                     logger.info("Encoding final video")
                     with open(final_video_path, 'rb') as video_file:

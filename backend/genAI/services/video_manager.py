@@ -280,12 +280,79 @@ class VideoManager:
                 except:
                     print(f"Warning: Could not clean up resources for segment {index}")
     
-    def concatenate_segments(self) -> str:
-        """Concatenate all segments into final video with fade transitions"""
+    # def concatenate_segments(self) -> str:
+    #     """Concatenate all segments into final video with fade transitions"""
+    #     if not self.segments:
+    #         raise VideoProcessingError("No segments to concatenate")
+
+    #     clips = []
+    #     try:
+    #         for i, path in enumerate(self.segments):
+    #             clip = VideoFileClip(path)
+                
+    #             if i == 0:
+    #                 clip = clip.with_effects([
+    #                     vfx.FadeOut(self.transition_duration)
+    #                 ])
+    #             elif i == len(self.segments) - 1:
+    #                 clip = clip.with_effects([
+    #                     vfx.FadeIn(self.transition_duration)
+    #                 ])
+    #             else:
+    #                 clip = clip.with_effects([
+    #                     vfx.FadeIn(self.transition_duration),
+    #                     vfx.FadeOut(self.transition_duration)
+    #                 ])
+    #             clips.append(clip)
+
+    #         final_video = concatenate_videoclips(
+    #             clips,
+    #             method="compose"  
+    #         )
+            
+    #         output_path = os.path.join(self.temp_dir, 'final_video.mp4')
+            
+    #         final_video.write_videofile(
+    #             output_path,
+    #             fps=30,
+    #             codec='libx264',
+    #             audio_codec='aac',
+    #             remove_temp=True,
+    #             threads=4,
+    #             preset='medium'
+    #         )
+            
+    #         return output_path
+
+    #     except Exception as e:
+    #         logger.error(f"Failed to concatenate segments: {str(e)}")
+    #         raise VideoProcessingError(f"Failed to concatenate segments: {e}")
+    #     finally:
+    #         for clip in clips:
+    #             try:
+    #                 clip.close()
+    #             except Exception:
+    #                 logger.warning(f"Failed to close clip: {clip}")
+    #         if 'final_video' in locals():
+    #             try:
+    #                 final_video.close()
+    #             except Exception:
+    #                 logger.warning("Failed to close final video")
+    def concatenate_segments(self, background_music_path=None) -> str:
+        """Concatenate all segments into final video with fade transitions and optional background music
+        
+        Args:
+            background_music_path: Optional path to a background music file (WAV, MP3, etc.)
+            
+        Returns:
+            Path to the final video file
+        """
         if not self.segments:
             raise VideoProcessingError("No segments to concatenate")
 
         clips = []
+        background_audio = None
+        
         try:
             for i, path in enumerate(self.segments):
                 clip = VideoFileClip(path)
@@ -305,10 +372,44 @@ class VideoManager:
                     ])
                 clips.append(clip)
 
+            # Concatenate video clips
             final_video = concatenate_videoclips(
                 clips,
                 method="compose"  
             )
+            
+            # Add background music if specified
+            if background_music_path and os.path.exists(background_music_path):
+                logger.info(f"Adding background music from: {background_music_path}")
+                
+                # Load background music
+                background_audio = AudioFileClip(background_music_path)
+                
+                # Adjust background music volume (lower to not overpower speech)
+                background_audio = background_audio.volumex(0.9)
+                
+                # Loop or trim background music to match video duration
+                if background_audio.duration < final_video.duration:
+                    # If background music is shorter than video, loop it
+                    n_loops = int(final_video.duration / background_audio.duration) + 1
+                    background_audio = concatenate_audioclips([background_audio] * n_loops)
+                
+                background_audio = background_audio.subclip(0, final_video.duration)
+                
+                original_audio = final_video.audio
+                
+                if original_audio:
+                    mixed_audio = CompositeAudioClip([
+                        original_audio,
+                        background_audio
+                    ])
+                    final_video = final_video.with_audio(mixed_audio)
+                else:
+                    final_video = final_video.with_audio(background_audio)
+                    
+                logger.info("Background music added successfully")
+            else:
+                print("NOT BACKGROUND MUSIC FOUND!!")
             
             output_path = os.path.join(self.temp_dir, 'final_video.mp4')
             
@@ -328,11 +429,19 @@ class VideoManager:
             logger.error(f"Failed to concatenate segments: {str(e)}")
             raise VideoProcessingError(f"Failed to concatenate segments: {e}")
         finally:
+            # Clean up resources
             for clip in clips:
                 try:
                     clip.close()
                 except Exception:
                     logger.warning(f"Failed to close clip: {clip}")
+            
+            if background_audio:
+                try:
+                    background_audio.close()
+                except Exception:
+                    logger.warning("Failed to close background audio")
+                    
             if 'final_video' in locals():
                 try:
                     final_video.close()

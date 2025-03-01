@@ -281,7 +281,171 @@ class VideoManager:
                 except:
                     print(f"Warning: Could not clean up resources for segment {index}")
     
-    # def concatenate_segments(self) -> str:
+    def concatenate_segments(self, background_audio_path, split_video_path="backgroundVideo.mp4") -> str:
+        """Concatenate all segments into final video with fade transitions, background music and split screen"""
+        if not self.segments:
+            raise VideoProcessingError("No segments to concatenate")
+
+        clips = []
+        try:
+            background_audio = None
+            if os.path.exists(background_audio_path):
+                logger.info(f"Loading background audio from: {background_audio_path}")
+                try:
+                    background_audio = AudioFileClip(background_audio_path)
+                    logger.info(f"Successfully loaded background audio with duration: {background_audio.duration}s")
+                except Exception as e:
+                    logger.error(f"Error loading background audio: {str(e)}")
+                    background_audio = None
+            else:
+                logger.warning(f"Background audio file not found at {background_audio_path}")
+
+            for i, path in enumerate(self.segments):
+                clip = VideoFileClip(path)
+                
+                if i == 0:
+                    clip = clip.with_effects([
+                        vfx.FadeOut(self.transition_duration)
+                    ])
+                elif i == len(self.segments) - 1:
+                    clip = clip.with_effects([
+                        vfx.FadeIn(self.transition_duration)
+                    ])
+                else:
+                    clip = clip.with_effects([
+                        vfx.FadeIn(self.transition_duration),
+                        vfx.FadeOut(self.transition_duration)
+                    ])
+                clips.append(clip)
+
+            generated_video = concatenate_videoclips(
+                clips,
+                method="compose"  
+            )
+            split_video = None
+            if os.path.exists(split_video_path):
+                try:
+                    logger.info(f"Loading split video from: {split_video_path}")
+                    split_video = VideoFileClip(split_video_path)
+                    logger.info(f"Successfully loaded split video with duration: {split_video.duration}s")
+                    
+                    split_video = split_video.subclipped(0, generated_video.duration)
+                    logger.info(f"Trimmed split video to match generated video duration: {generated_video.duration}s")
+                    
+                    
+                    target_width = min(generated_video.size[0], split_video.size[0])
+                    generated_video_resized = generated_video.resized(width=target_width)
+                    split_video_resized = split_video.resized(width=target_width)
+                    
+                    logger.info(f"Resized videos to WIDTH: {target_width}px")
+                    
+                    logger.info("Creating split screen video...")
+                    final_video = clips_array([
+                        [generated_video_resized],
+                        [split_video_resized]
+                    ])
+                    
+                    logger.info(f"Successfully created split screen video with size: {final_video.size}")
+                except Exception as e:
+                    logger.error(f"Error creating split screen: {str(e)}")
+                    logger.exception("Split screen creation failed, using only generated video")
+                    final_video = generated_video
+            else:
+                logger.warning(f"Split video file not found at {split_video_path}, using only generated video")
+                final_video = generated_video
+            
+            if background_audio is not None:
+                try:
+                    logger.info(f"Video duration: {final_video.duration}s, Audio duration: {background_audio.duration}s")
+                    if background_audio.duration > final_video.duration:
+                        logger.info(f"Trimming background audio to match video duration ({final_video.duration}s)")
+                        background_audio = background_audio.subclipped(0, final_video.duration)
+                        logger.info(f"New background audio duration: {background_audio.duration}s")
+                    background_audio_adjusted = background_audio.with_effects([afx.MultiplyVolume(0.5)])
+                    if final_video.audio is not None:
+                        original_audio = final_video.audio
+                        mixed_audio = CompositeAudioClip([
+                            original_audio, 
+                            background_audio_adjusted 
+                        ])
+                    else:
+                        mixed_audio = background_audio_adjusted
+                    final_video = final_video.with_audio(mixed_audio)
+                    logger.info("Background music added to final video")
+                except Exception as e:
+                    logger.error(f"Error applying background audio: {str(e)}")
+                    logger.exception("Detailed stacktrace:")
+            
+            output_path = os.path.join(self.temp_dir, 'final_video.mp4')
+            
+            final_video.write_videofile(
+                output_path,
+                fps=30,
+                codec='libx264',
+                audio_codec='aac',
+                remove_temp=True,
+                threads=4,
+                preset='medium'
+            )
+            
+            return output_path
+
+        except Exception as e:
+            logger.error(f"Failed to concatenate segments: {str(e)}")
+            logger.exception("Detailed stacktrace:")
+            raise VideoProcessingError(f"Failed to concatenate segments: {e}")
+        finally:
+            for clip in clips:
+                try:
+                    clip.close()
+                except Exception:
+                    logger.warning(f"Failed to close clip: {clip}")
+            if 'generated_video' in locals():
+                try:
+                    generated_video.close()
+                except Exception:
+                    logger.warning("Failed to close generated video")
+            if 'split_video' in locals() and split_video is not None:
+                try:
+                    split_video.close()
+                except Exception:
+                    logger.warning("Failed to close split video")
+            if 'final_video' in locals():
+                try:
+                    final_video.close()
+                except Exception:
+                    logger.warning("Failed to close final video")
+            if 'background_audio' in locals() and background_audio is not None:
+                try:
+                    background_audio.close()
+                except Exception:
+                    logger.warning("Failed to close background audio")
+    
+
+    def cleanup(self):
+        """Clean up temporary files and directory"""
+        try:
+            for segment in self.segments:
+                if os.path.exists(segment):
+                    os.remove(segment)
+            if os.path.exists(self.temp_dir):
+                import shutil
+                shutil.rmtree(self.temp_dir, ignore_errors=True)
+                
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup()
+        
+        
+        
+        
+        
+# def concatenate_segments(self) -> str:
     #     """Concatenate all segments into final video with fade transitions"""
     #     if not self.segments:
     #         raise VideoProcessingError("No segments to concatenate")
@@ -339,133 +503,124 @@ class VideoManager:
     #                 final_video.close()
     #             except Exception:
     #                 logger.warning("Failed to close final video")
-    def concatenate_segments(self, background_audio_path) -> str:
-        """Concatenate all segments into final video with fade transitions and background music"""
-        if not self.segments:
-            raise VideoProcessingError("No segments to concatenate")
 
-        clips = []
-        try:
-            # Load background audio if it exists
-            background_audio = None
-            if os.path.exists(background_audio_path):
-                logger.info(f"Loading background audio from: {background_audio_path}")
-                try:
-                    background_audio = AudioFileClip(background_audio_path)
-                    logger.info(f"Successfully loaded background audio with duration: {background_audio.duration}s")
-                except Exception as e:
-                    logger.error(f"Error loading background audio: {str(e)}")
-                    background_audio = None
-            else:
-                logger.warning(f"Background audio file not found at {background_audio_path}")
 
-            # Load and process video segments
-            for i, path in enumerate(self.segments):
-                clip = VideoFileClip(path)
+
+
+
+
+
+
+
+
+
+# def concatenate_segments(self, background_audio_path) -> str:
+    #     """Concatenate all segments into final video with fade transitions and background music"""
+    #     if not self.segments:
+    #         raise VideoProcessingError("No segments to concatenate")
+
+    #     clips = []
+    #     try:
+    #         # Load background audio if it exists
+    #         background_audio = None
+    #         if os.path.exists(background_audio_path):
+    #             logger.info(f"Loading background audio from: {background_audio_path}")
+    #             try:
+    #                 background_audio = AudioFileClip(background_audio_path)
+    #                 logger.info(f"Successfully loaded background audio with duration: {background_audio.duration}s")
+    #             except Exception as e:
+    #                 logger.error(f"Error loading background audio: {str(e)}")
+    #                 background_audio = None
+    #         else:
+    #             logger.warning(f"Background audio file not found at {background_audio_path}")
+
+    #         # Load and process video segments
+    #         for i, path in enumerate(self.segments):
+    #             clip = VideoFileClip(path)
                 
-                if i == 0:
-                    clip = clip.with_effects([
-                        vfx.FadeOut(self.transition_duration)
-                    ])
-                elif i == len(self.segments) - 1:
-                    clip = clip.with_effects([
-                        vfx.FadeIn(self.transition_duration)
-                    ])
-                else:
-                    clip = clip.with_effects([
-                        vfx.FadeIn(self.transition_duration),
-                        vfx.FadeOut(self.transition_duration)
-                    ])
-                clips.append(clip)
+    #             if i == 0:
+    #                 clip = clip.with_effects([
+    #                     vfx.FadeOut(self.transition_duration)
+    #                 ])
+    #             elif i == len(self.segments) - 1:
+    #                 clip = clip.with_effects([
+    #                     vfx.FadeIn(self.transition_duration)
+    #                 ])
+    #             else:
+    #                 clip = clip.with_effects([
+    #                     vfx.FadeIn(self.transition_duration),
+    #                     vfx.FadeOut(self.transition_duration)
+    #                 ])
+    #             clips.append(clip)
 
-            # Concatenate video clips
-            final_video = concatenate_videoclips(
-                clips,
-                method="compose"  
-            )
+    #         # Concatenate video clips
+    #         final_video = concatenate_videoclips(
+    #             clips,
+    #             method="compose"  
+    #         )
             
-            # Add background music if available
-            if background_audio is not None:
-                try:
-                    logger.info(f"Video duration: {final_video.duration}s, Audio duration: {background_audio.duration}s")
+    #         # Add background music if available
+    #         if background_audio is not None:
+    #             try:
+    #                 logger.info(f"Video duration: {final_video.duration}s, Audio duration: {background_audio.duration}s")
                     
-                    # Trim the audio if it's longer than the video
-                    if background_audio.duration > final_video.duration:
-                        logger.info(f"Trimming background audio to match video duration ({final_video.duration}s)")
+    #                 # Trim the audio if it's longer than the video
+    #                 if background_audio.duration > final_video.duration:
+    #                     logger.info(f"Trimming background audio to match video duration ({final_video.duration}s)")
                         
-                        # In MoviePy v2.0, we use with_duration to trim the audio
-                        background_audio = background_audio.with_duration(final_video.duration)
-                        logger.info(f"New background audio duration: {background_audio.duration}s")
+    #                     # In MoviePy v2.0, we use with_duration to trim the audio
+    #                     background_audio = background_audio.with_duration(final_video.duration)
+    #                     logger.info(f"New background audio duration: {background_audio.duration}s")
                     
-                    background_audio_adjusted = background_audio.with_effects([afx.MultiplyVolume(0.5)])
+    #                 background_audio_adjusted = background_audio.with_effects([afx.MultiplyVolume(0.5)])
                     
-                    original_audio = final_video.audio
-                    mixed_audio = CompositeAudioClip([
-                        original_audio, 
-                        background_audio_adjusted 
-                    ])
+    #                 original_audio = final_video.audio
+    #                 mixed_audio = CompositeAudioClip([
+    #                     original_audio, 
+    #                     background_audio_adjusted 
+    #                 ])
                     
-                    # Apply the mixed audio to the final video
-                    final_video = final_video.with_audio(mixed_audio)
-                    logger.info("Background music added to final video")
-                except Exception as e:
-                    logger.error(f"Error applying background audio: {str(e)}")
-                    logger.exception("Detailed stacktrace:")
-                    # Continue with original audio if there's an error
+    #                 # Apply the mixed audio to the final video
+    #                 final_video = final_video.with_audio(mixed_audio)
+    #                 logger.info("Background music added to final video")
+    #             except Exception as e:
+    #                 logger.error(f"Error applying background audio: {str(e)}")
+    #                 logger.exception("Detailed stacktrace:")
+    #                 # Continue with original audio if there's an error
             
-            # Write the final video to file
-            output_path = os.path.join(self.temp_dir, 'final_video.mp4')
+    #         # Write the final video to file
+    #         output_path = os.path.join(self.temp_dir, 'final_video.mp4')
             
-            final_video.write_videofile(
-                output_path,
-                fps=30,
-                codec='libx264',
-                audio_codec='aac',
-                remove_temp=True,
-                threads=4,
-                preset='medium'
-            )
+    #         final_video.write_videofile(
+    #             output_path,
+    #             fps=30,
+    #             codec='libx264',
+    #             audio_codec='aac',
+    #             remove_temp=True,
+    #             threads=4,
+    #             preset='medium'
+    #         )
             
-            return output_path
+    #         return output_path
 
-        except Exception as e:
-            logger.error(f"Failed to concatenate segments: {str(e)}")
-            logger.exception("Detailed stacktrace:")
-            raise VideoProcessingError(f"Failed to concatenate segments: {e}")
-        finally:
-            # Clean up resources
-            for clip in clips:
-                try:
-                    clip.close()
-                except Exception:
-                    logger.warning(f"Failed to close clip: {clip}")
-            if 'final_video' in locals():
-                try:
-                    final_video.close()
-                except Exception:
-                    logger.warning("Failed to close final video")
-            if 'background_audio' in locals() and background_audio is not None:
-                try:
-                    background_audio.close()
-                except Exception:
-                    logger.warning("Failed to close background audio")
-    
-
-    def cleanup(self):
-        """Clean up temporary files and directory"""
-        try:
-            for segment in self.segments:
-                if os.path.exists(segment):
-                    os.remove(segment)
-            if os.path.exists(self.temp_dir):
-                import shutil
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
-                
-        except Exception as e:
-            logger.error(f"Cleanup error: {e}")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.cleanup()
+    #     except Exception as e:
+    #         logger.error(f"Failed to concatenate segments: {str(e)}")
+    #         logger.exception("Detailed stacktrace:")
+    #         raise VideoProcessingError(f"Failed to concatenate segments: {e}")
+    #     finally:
+    #         # Clean up resources
+    #         for clip in clips:
+    #             try:
+    #                 clip.close()
+    #             except Exception:
+    #                 logger.warning(f"Failed to close clip: {clip}")
+    #         if 'final_video' in locals():
+    #             try:
+    #                 final_video.close()
+    #             except Exception:
+    #                 logger.warning("Failed to close final video")
+    #         if 'background_audio' in locals() and background_audio is not None:
+    #             try:
+    #                 background_audio.close()
+    #             except Exception:
+    #                 logger.warning("Failed to close background audio")

@@ -491,7 +491,7 @@ print(f"Current working directory: {os.getcwd()}")
 
 # Find all .wav files
 wav_files = find_all_wav_files()
-print(f"Found {len(wav_files)} .wav files:")
+print(f"Found {len(wav_files)} .wav files:") 
 for file in wav_files:
     print(f"  - {file} (exists: {os.path.exists(file)})")
 

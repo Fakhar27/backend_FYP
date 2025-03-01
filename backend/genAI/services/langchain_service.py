@@ -331,7 +331,9 @@ class StoryIterationChain:
                             raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
                     
                     logger.info("Starting video concatenation")
-                    final_video_path = video_manager.concatenate_segments(background_audio_path="E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav")
+                    final_video_path = video_manager.concatenate_segments(
+                        background_audio_path="E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav",
+                        split_video_path="E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4")
                     
                     logger.info("Encoding final video")
                     with open(final_video_path, 'rb') as video_file:

@@ -18,6 +18,8 @@ services:
       - ./backend:/app
     ports:
       - "8000:8000"
+    env_file:
+      - .env.docker
     environment:
       - DATABASE_URL=postgresql://postgres:Fakhar27@db:5432/genAI
       - DEBUG=1

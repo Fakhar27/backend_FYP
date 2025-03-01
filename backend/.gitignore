@@ -4,7 +4,6 @@
 venv/
 env/
 .env.docker
-
 # Python
 __pycache__/
 *.py[cod]

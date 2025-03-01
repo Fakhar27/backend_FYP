@@ -34,7 +34,7 @@ load_dotenv()
 co = cohere.Client(os.getenv("CO_API_KEY"))
 # API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
 # API_URL = "https://api-inference.huggingface.co/models/Lykon/DreamShaper"
-# headers = {"Authorization": "Bearer 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"}
+# headers = {"Authorization": os.getenv(HUGGING_FACE_API_KEY)}
 COLAB_URL = "https://87c7-35-185-226-172.ngrok-free.app"
 COLAB_URL_2 = ""
 COLAB_URL_3 = ""

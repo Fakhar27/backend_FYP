@@ -128,11 +128,22 @@ async def generate_content(request):
                 "error": "Required services not configured. Update URLs first."
             }, status=500)
             
+        # content_request = ContentRequest(
+        #     prompt=data.get("prompt"),
+        #     genre=data.get("genre", "Adventure"),
+        #     iterations=data.get("iterations", 4)
+        # )
         content_request = ContentRequest(
             prompt=data.get("prompt"),
-            genre=data.get("genre", "Adventure"),
-            iterations=data.get("iterations", 4)
+            genre=data.get("genre", "cyberpunk"),
+            iterations=data.get("iterations", 4),
+            backgroundVideo=data.get("backgroundType", "urban"),
+            backgroundMusic=data.get("musicType", "synthwave"),
+            voiceType=data.get("voiceType", "male"),
+            subtitleColor=data.get("subtitleColor", "#ff00ff")
         )
+        
+        logger.info(f"Content request: {content_request}")
         
         service = await get_story_chain_service()
         result = await service.generate_content_pipeline(content_request)

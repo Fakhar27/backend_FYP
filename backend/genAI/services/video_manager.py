@@ -140,13 +140,48 @@ class VideoManager:
             raise VideoProcessingError(f"Failed to get synchronized subtitles: {str(e)}")
 
 
-    def create_word_level_subtitles(self, whisper_data: Dict, frame_size: tuple, duration: float) -> List:
-        """Creates word-level subtitle clips"""
+    # def create_word_level_subtitles(self, whisper_data: Dict, frame_size: tuple, duration: float) -> List:
+    #     """Creates word-level subtitle clips"""
+    #     try:
+    #         subtitle_clips = []
+    #         words_data = whisper_data.get('word_level', [])
+    #         position = ('center', 0.78)
+    #         relative = True
+            
+    #         for word_data in words_data:
+    #             word = word_data['word'].strip()
+    #             if not word:
+    #                 continue
+                    
+    #             word_clip = (TextClip(
+    #                 text=word,
+    #                 font=self.font_path,
+    #                 font_size=int(frame_size[1] * 0.075), 
+    #                 color='yellow',
+    #                 stroke_color='black',
+    #                 stroke_width=2
+    #             )
+    #             .with_position(position, relative=relative)
+    #             .with_start(word_data['start'])
+    #             .with_duration(word_data['end'] - word_data['start']))
+                
+    #             subtitle_clips.append(word_clip)
+                
+    #         return subtitle_clips
+    #     except Exception as e:
+    #         logger.error(f"Error creating word-level subtitles: {e}")
+    #         return []
+    def create_word_level_subtitles(self, whisper_data: Dict, frame_size: tuple, duration: float, subtitle_color: str = "#ff00ff") -> List:
+        """Creates word-level subtitle clips with customizable color"""
         try:
             subtitle_clips = []
             words_data = whisper_data.get('word_level', [])
             position = ('center', 0.78)
             relative = True
+            
+            # Use the provided subtitle color
+            color = subtitle_color
+            logger.info(f"Using subtitle color: {color}")
             
             for word_data in words_data:
                 word = word_data['word'].strip()
@@ -157,7 +192,7 @@ class VideoManager:
                     text=word,
                     font=self.font_path,
                     font_size=int(frame_size[1] * 0.075), 
-                    color='yellow',
+                    color=color,  # Dynamic color from parameter
                     stroke_color='black',
                     stroke_width=2
                 )
@@ -173,8 +208,114 @@ class VideoManager:
             return []
 
     
+    # async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, 
+    #                        session: Optional[aiohttp.ClientSession] = None) -> str:
+    #     """Create a video segment with dynamically synchronized subtitles"""
+    #     logger.info(f"Creating segment {index} with Whisper URL: {whisper_url}")
+    #     print(f"\n=== Starting Segment {index} Creation ===")
+    #     print(f"Whisper URL provided: {whisper_url}")
+    #     final_clip = None
+        
+    #     if not whisper_url:
+    #         logger.error("No Whisper URL provided")
+    #         print("Error: Missing Whisper URL")
+    #         raise VideoProcessingError("Whisper URL is required for subtitle generation")
+        
+    #     if not session:
+    #         logger.error("No session provided")
+    #         print("Error: Session is required")
+    #         raise VideoProcessingError("Session is required for subtitle generation")
+            
+    #     try:
+    #         print(f"Segment {index} data contains:")
+    #         print(f"- Audio data length: {len(segment['audio_data']) if 'audio_data' in segment else 'Missing'}")
+    #         print(f"- Image data length: {len(segment['image_data']) if 'image_data' in segment else 'Missing'}")
+    #         print(f"- Story text length: {len(segment['story_text']) if 'story_text' in segment else 'Missing'}")
+            
+    #         audio_path = self._save_base64_audio(segment['audio_data'], index)
+    #         print(f"Audio saved to: {audio_path}")
+            
+    #         image_array = self._decode_base64_image(segment['image_data'])
+    #         print("Image decoded successfully")
+            
+    #         print("\nCreating video clips...")
+    #         with AudioFileClip(audio_path) as audio_clip:
+    #             duration = audio_clip.duration
+    #             print(f"Audio duration: {duration} seconds")
+                
+    #             video_clip = ImageClip(image_array).with_duration(duration)
+    #             video_with_audio = video_clip.with_audio(audio_clip)
+                
+    #             try:
+    #                 print(f"\nAttempting to get subtitles from Whisper API...")
+    #                 logger.info(f"Whisper URL provided: {whisper_url}")
+                    
+    #                 whisper_data = await self.get_synchronized_subtitles(
+    #                     segment['audio_data'],
+    #                     whisper_url,
+    #                     session  
+    #                 )
+    #                 print("Successfully received whisper data")
+                    
+    #                 if whisper_data:
+    #                     print("Creating subtitle clips...")
+    #                     subtitle_clips = self.create_word_level_subtitles(
+    #                         whisper_data,
+    #                         video_clip.size,
+    #                         duration
+    #                     )
+                        
+    #                     if subtitle_clips:
+    #                         print(f"Created {len(subtitle_clips)} subtitle clips")
+    #                         final_clip = CompositeVideoClip([
+    #                             video_with_audio,
+    #                             *subtitle_clips
+    #                         ])
+    #                         print("Composite video created with subtitles")
+    #                     else:
+    #                         print("No subtitle clips were created, falling back to video without subtitles")
+    #                         final_clip = video_with_audio
+    #                 else:
+    #                     print("No whisper data received, creating video without subtitles")
+    #                     final_clip = video_with_audio
+                        
+    #             except Exception as e:
+    #                 logger.error(f"Subtitle generation failed: {str(e)}")
+    #                 print(f"Failed to create subtitles: {str(e)}")
+    #                 final_clip = video_with_audio
+                
+    #             output_path = os.path.join(self.temp_dir, f'segment_{index}.mp4')
+    #             print(f"\nWriting video to: {output_path}")
+                
+    #             final_clip.write_videofile(
+    #                 output_path,
+    #                 fps=24,
+    #                 codec='libx264',
+    #                 audio_codec='aac',
+    #                 threads=4,
+    #                 preset='medium',
+    #                 remove_temp=True
+    #             )
+                
+    #             self.segments.append(output_path)
+    #             print(f"Segment {index} completed successfully")
+    #             return output_path
+                
+    #     except Exception as e:
+    #         logger.error(f"Segment {index} creation failed: {str(e)}")
+    #         print(f"Error creating segment {index}: {str(e)}")
+    #         raise VideoProcessingError(f"Failed to create segment {index}: {str(e)}")
+            
+    #     finally:
+    #         print(f"=== Finishing Segment {index} Creation ===\n")
+    #         if final_clip:
+    #             try:
+    #                 final_clip.close()
+    #                 print(f"Cleaned up resources for segment {index}")
+    #             except:
+    #                 print(f"Warning: Could not clean up resources for segment {index}")
     async def create_segment(self, segment: Dict, index: int, whisper_url: Optional[str] = None, 
-                           session: Optional[aiohttp.ClientSession] = None) -> str:
+                       session: Optional[aiohttp.ClientSession] = None) -> str:
         """Create a video segment with dynamically synchronized subtitles"""
         logger.info(f"Creating segment {index} with Whisper URL: {whisper_url}")
         print(f"\n=== Starting Segment {index} Creation ===")
@@ -196,6 +337,7 @@ class VideoManager:
             print(f"- Audio data length: {len(segment['audio_data']) if 'audio_data' in segment else 'Missing'}")
             print(f"- Image data length: {len(segment['image_data']) if 'image_data' in segment else 'Missing'}")
             print(f"- Story text length: {len(segment['story_text']) if 'story_text' in segment else 'Missing'}")
+            print(f"- Subtitle color: {segment.get('subtitle_color', '#ff00ff')}")
             
             audio_path = self._save_base64_audio(segment['audio_data'], index)
             print(f"Audio saved to: {audio_path}")
@@ -224,14 +366,18 @@ class VideoManager:
                     
                     if whisper_data:
                         print("Creating subtitle clips...")
+                        # Get subtitle color from segment, default to pink if not specified
+                        subtitle_color = segment.get('subtitle_color', '#ff00ff')
+                        
                         subtitle_clips = self.create_word_level_subtitles(
                             whisper_data,
                             video_clip.size,
-                            duration
+                            duration,
+                            subtitle_color=subtitle_color  # Pass subtitle color to method
                         )
                         
                         if subtitle_clips:
-                            print(f"Created {len(subtitle_clips)} subtitle clips")
+                            print(f"Created {len(subtitle_clips)} subtitle clips with color {subtitle_color}")
                             final_clip = CompositeVideoClip([
                                 video_with_audio,
                                 *subtitle_clips

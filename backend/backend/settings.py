@@ -106,26 +106,26 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_REFRESH_SERIALIZER": "rest_framework_simplejwt.serializers.TokenRefreshSlidingSerializer",
 }
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'genAI', 
-        'USER': 'postgres',
-        'PASSWORD': 'Fakhar27',
-        'HOST': 'db', 
-        'PORT': '5432',
-    }
-}
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql_psycopg2',
 #         'NAME': 'genAI', 
 #         'USER': 'postgres',
 #         'PASSWORD': 'Fakhar27',
-#         'HOST': '127.0.0.1', 
+#         'HOST': 'db', 
 #         'PORT': '5432',
 #     }
 # }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': 'genAI', 
+        'USER': 'postgres',
+        'PASSWORD': 'Fakhar27',
+        'HOST': '127.0.0.1', 
+        'PORT': '5432',
+    }
+}
 
 LOGGING = {
     'version': 1,

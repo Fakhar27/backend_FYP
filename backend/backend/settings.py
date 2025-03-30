@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'genAI',
     'corsheaders',
+    'storages',
     'rest_framework_simplejwt.token_blacklist',
 ]
 

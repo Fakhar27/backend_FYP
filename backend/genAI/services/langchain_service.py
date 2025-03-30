@@ -8,6 +8,7 @@ from langchain_core.outputs import LLMResult
 from langsmith import Client
 from langsmith.run_helpers import traceable, trace
 import asyncio
+from .aws_services import S3Handler
 import aiohttp
 import os
 import logging
@@ -414,6 +415,130 @@ class StoryIterationChain:
     #                         video_manager.cleanup()
     #                     except Exception as e:
     #                         logger.error(f"Error during video manager cleanup: {str(e)}")
+    # @traceable(run_type="chain")
+    # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
+    #     """Generate complete story with images and voice narration, return as video"""
+    #     async with aiohttp.ClientSession() as session:
+    #         with trace(
+    #             name="Full Story Generation",
+    #             run_type="chain",
+    #             project_name=os.getenv("LANGSMITH_PROJECT")
+    #         ) as run:
+    #             video_manager = None
+    #             try:
+    #                 logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
+    #                 logger.info(f"Processing request with settings: genre={request.genre}, "
+    #                         f"background={request.backgroundVideo}, music={request.backgroundMusic}, "
+    #                         f"voice={request.voiceType}, color={request.subtitleColor}")
+                    
+    #                 print(f"Using Whisper endpoint: {self.whisper_url}")
+                    
+    #                 if not self.whisper_url:
+    #                     raise ValueError("Whisper URL is required")
+                    
+    #                 video_manager = VideoManager()
+    #                 previous_content = None
+    #                 segments_data = []
+                    
+    #                 for i in range(request.iterations):
+    #                     try:
+    #                         print(f"\n=== Processing Iteration {i + 1} ===")
+    #                         iteration_result = await self.generate_iteration(
+    #                             input_text=request.prompt if i == 0 else "",
+    #                             genre=request.genre,
+    #                             previous_content=previous_content
+    #                         )
+    #                         image_task = asyncio.create_task(
+    #                             self.generate_image(iteration_result["image"], session)
+    #                         )
+    #                         voice_task = asyncio.create_task(
+    #                             self.generate_voice(
+    #                                 text=iteration_result["story"], 
+    #                                 voice_type=request.voiceType,  # Pass voice type to the generator
+    #                                 session=session
+    #                             )
+    #                         )
+    #                         image_data, audio_data = await asyncio.gather(
+    #                             image_task,
+    #                             voice_task,
+    #                             return_exceptions=False 
+    #                         )
+                            
+    #                         if not image_data or not audio_data:
+    #                             raise ValueError(f"Failed to generate media for iteration {i + 1}")
+    #                         segment_data = {
+    #                             'image_data': image_data,
+    #                             'audio_data': audio_data,
+    #                             'story_text': iteration_result["story"],
+    #                             'subtitle_color': request.subtitleColor  # Pass subtitle color
+    #                         }
+                            
+    #                         segment_path = await video_manager.create_segment(
+    #                             segment_data,
+    #                             i,
+    #                             whisper_url=self.whisper_url,
+    #                             session=session
+    #                         )
+                            
+    #                         previous_content = iteration_result
+    #                         segments_data.append(segment_path)
+                            
+    #                         run.add_metadata({
+    #                             f"iteration_{i+1}": {
+    #                                 "story": iteration_result["story"],
+    #                                 "image_description": iteration_result["image"],
+    #                                 "status": "processed",
+    #                                 "genre": request.genre
+    #                             }
+    #                         })
+                            
+    #                         logger.info(f"Completed iteration {i + 1}")
+                            
+    #                     except Exception as e:
+    #                         logger.error(f"Error in iteration {i + 1}: {str(e)}")
+    #                         raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
+                    
+    #                 # TODO: In the future, these paths should come from a database based on the request parameters
+    #                 # For now, we'll keep the hardcoded paths but log what would be selected
+    #                 logger.info(f"Would select background video: {request.backgroundVideo}")
+    #                 logger.info(f"Would select background music: {request.backgroundMusic}")
+                    
+    #                 # Current hardcoded paths
+    #                 # background_audio_path = this.background_audio_path 
+    #                 background_audio_path = "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+    #                 split_video_path = "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+                    
+    #                 logger.info("Starting video concatenation")
+    #                 final_video_path = video_manager.concatenate_segments(
+    #                     background_audio_path=background_audio_path,
+    #                     split_video_path=split_video_path
+    #                 )
+                    
+    #                 logger.info("Encoding final video")
+    #                 with open(final_video_path, 'rb') as video_file:
+    #                     video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
+                    
+    #                 return {
+    #                     "success": True,
+    #                     "video_data": video_base64,
+    #                     "content_type": "video/mp4",
+    #                     "metrics": {
+    #                         "total_tokens": self.token_callback.total_tokens,
+    #                         "successful_requests": self.token_callback.successful_requests,
+    #                         "failed_requests": self.token_callback.failed_requests
+    #                     }
+    #                 }
+                    
+    #             except Exception as e:
+    #                 logger.error(f"Error in video generation pipeline: {str(e)}")
+    #                 raise
+                
+    #             finally:
+    #                 if video_manager:
+    #                     try:
+    #                         video_manager.cleanup()
+    #                     except Exception as e:
+    #                         logger.error(f"Error during video manager cleanup: {str(e)}")
     @traceable(run_type="chain")
     async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
         """Generate complete story with images and voice narration, return as video"""
@@ -424,6 +549,7 @@ class StoryIterationChain:
                 project_name=os.getenv("LANGSMITH_PROJECT")
             ) as run:
                 video_manager = None
+                s3_handler = None
                 try:
                     logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
                     logger.info(f"Processing request with settings: genre={request.genre}, "
@@ -436,6 +562,7 @@ class StoryIterationChain:
                         raise ValueError("Whisper URL is required")
                     
                     video_manager = VideoManager()
+                    s3_handler = S3Handler()
                     previous_content = None
                     segments_data = []
                     
@@ -453,7 +580,7 @@ class StoryIterationChain:
                             voice_task = asyncio.create_task(
                                 self.generate_voice(
                                     text=iteration_result["story"], 
-                                    voice_type=request.voiceType,  # Pass voice type to the generator
+                                    voice_type=request.voiceType,
                                     session=session
                                 )
                             )
@@ -469,7 +596,7 @@ class StoryIterationChain:
                                 'image_data': image_data,
                                 'audio_data': audio_data,
                                 'story_text': iteration_result["story"],
-                                'subtitle_color': request.subtitleColor  # Pass subtitle color
+                                'subtitle_color': request.subtitleColor
                             }
                             
                             segment_path = await video_manager.create_segment(
@@ -497,19 +624,26 @@ class StoryIterationChain:
                             logger.error(f"Error in iteration {i + 1}: {str(e)}")
                             raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
                     
-                    # TODO: In the future, these paths should come from a database based on the request parameters
-                    # For now, we'll keep the hardcoded paths but log what would be selected
-                    logger.info(f"Would select background video: {request.backgroundVideo}")
-                    logger.info(f"Would select background music: {request.backgroundMusic}")
+                    # Get background video and music files from S3 based on user selection
+                    background_video_path = s3_handler.get_media_file('video', request.backgroundVideo)
+                    background_audio_path = s3_handler.get_media_file('music', request.backgroundMusic)
                     
-                    # Current hardcoded paths
-                    background_audio_path = "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
-                    split_video_path = "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+                    logger.info(f"Selected background video: {background_video_path}")
+                    logger.info(f"Selected background music: {background_audio_path}")
+                    
+                    # Fallback to hardcoded paths if S3 download fails
+                    if not background_video_path:
+                        background_video_path = "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+                        logger.warning(f"Using fallback video path: {background_video_path}")
+                    
+                    if not background_audio_path:
+                        background_audio_path = "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+                        logger.warning(f"Using fallback audio path: {background_audio_path}")
                     
                     logger.info("Starting video concatenation")
                     final_video_path = video_manager.concatenate_segments(
                         background_audio_path=background_audio_path,
-                        split_video_path=split_video_path
+                        split_video_path=background_video_path
                     )
                     
                     logger.info("Encoding final video")
@@ -537,3 +671,9 @@ class StoryIterationChain:
                             video_manager.cleanup()
                         except Exception as e:
                             logger.error(f"Error during video manager cleanup: {str(e)}")
+                    
+                    if s3_handler:
+                        try:
+                            s3_handler.cleanup()
+                        except Exception as e:
+                            logger.error(f"Error during S3 handler cleanup: {str(e)}")

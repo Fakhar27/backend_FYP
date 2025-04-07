@@ -137,10 +137,10 @@ async def generate_content(request):
             prompt=data.get("prompt"),
             genre=data.get("genre", "cyberpunk"),
             iterations=data.get("iterations", 4),
-            # backgroundVideo=data.get("backgroundType", "urban"),
-            # backgroundMusic=data.get("musicType", "synthwave"),
-            # voiceType=data.get("voiceType", "male"),
-            # subtitleColor=data.get("subtitleColor", "#ff00ff")
+            backgroundVideo=data.get("backgroundType", "urban"),
+            backgroundMusic=data.get("musicType", "synthwave"),
+            voiceType=data.get("voiceType", "male"),
+            subtitleColor=data.get("subtitleColor", "#ff00ff")
         )
         
         logger.info(f"Content request: {content_request}")

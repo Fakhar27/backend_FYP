@@ -24,11 +24,14 @@ class S3Handler:
         self.background_videos = {
             "urban": "background_videos/split_screen_video_1.mp4",
             "1": "background_videos/split_screen_video_1.mp4",
+            "2":" background_videos/nature.mp4",
+            "3": "background_videos/subway.mp4",
         }
         
         self.background_music = {
             "synthwave": "background_music/backgroundMusic1.wav",
             "1": "background_music/backgroundMusic1.wav",
+            "2": "background_music/audio2.wav",
         }
         
         logger.info(f"S3Handler initialized with bucket: {self.bucket_name}")

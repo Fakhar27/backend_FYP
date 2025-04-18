@@ -36,6 +36,52 @@ class S3Handler:
         
         logger.info(f"S3Handler initialized with bucket: {self.bucket_name}")
     
+    # def get_media_file(self, media_type: str, selection: str) -> Optional[str]:
+    #     """
+    #     Download a media file from S3 based on type and selection
+        
+    #     Args:
+    #         media_type: 'video' or 'music'
+    #         selection: Key from the mapping dictionaries
+            
+    #     Returns:
+    #         Local path to downloaded file or None if error
+    #     """
+    #     try:
+    #         if media_type == 'video':
+    #             mapping = self.background_videos
+    #             default_key = list(mapping.values())[0]
+    #         elif media_type == 'music':
+    #             mapping = self.background_music
+    #             default_key = list(mapping.values())[0]
+    #         else:
+    #             logger.error(f"Invalid media type: {media_type}")
+    #             return None
+                
+    #         s3_key = mapping.get(selection, default_key)
+    #         filename = s3_key.split('/')[-1]
+    #         local_path = os.path.join(self.temp_dir, filename)
+            
+    #         logger.info(f"Downloading {s3_key} from bucket {self.bucket_name}")
+            
+    #         self.s3_client.download_file(
+    #             self.bucket_name,
+    #             s3_key,
+    #             local_path
+    #         )
+            
+    #         logger.info(f"Successfully downloaded to {local_path}")
+    #         return local_path
+            
+    #     except ClientError as e:
+    #         logger.error(f"Error downloading from S3: {str(e)}")
+    #         # if media_type == 'video':
+    #         #     return "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+    #         # else:
+    #         #     return "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+    #     except Exception as e:
+    #         logger.error(f"Unexpected error: {str(e)}")
+    #         return None
     def get_media_file(self, media_type: str, selection: str) -> Optional[str]:
         """
         Download a media file from S3 based on type and selection
@@ -45,9 +91,15 @@ class S3Handler:
             selection: Key from the mapping dictionaries
             
         Returns:
-            Local path to downloaded file or None if error
+            Local path to downloaded file, None if error, or special "NONE" string
+            if user selected "0" (no background)
         """
         try:
+            # Special case: Check if the selection is "0" (no background)
+            if selection == "0":
+                logger.info(f"User selected no {media_type} background")
+                return "NONE"  # Return special marker for "no background"
+                
             if media_type == 'video':
                 mapping = self.background_videos
                 default_key = list(mapping.values())[0]
@@ -75,10 +127,7 @@ class S3Handler:
             
         except ClientError as e:
             logger.error(f"Error downloading from S3: {str(e)}")
-            # if media_type == 'video':
-            #     return "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
-            # else:
-            #     return "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+            return None
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             return None

@@ -114,54 +114,6 @@ async def get_story_chain_service():
         logger.error(f"Error creating StoryIterationChain service: {str(e)}")
         raise
 
-# @csrf_exempt
-# async def generate_content(request):
-#     if request.method != 'POST':
-#         return JsonResponse({"error": "Invalid request method."}, status=405)
-        
-#     try:
-#         data = json.loads(request.body)
-        
-#         if not COLAB_URL or not COLAB_URL_2 or not COLAB_URL_3:
-#             logger.error("COLAB_URL or COLAB_URL_2 or COLAB_URL_3 not set")
-#             return JsonResponse({
-#                 "error": "Required services not configured. Update URLs first."
-#             }, status=500)
-            
-#         # content_request = ContentRequest(
-#         #     prompt=data.get("prompt"),
-#         #     genre=data.get("genre", "Adventure"),
-#         #     iterations=data.get("iterations", 4)
-#         # )
-#         content_request = ContentRequest(
-#             prompt=data.get("prompt"),
-#             genre=data.get("genre", "cyberpunk"),
-#             iterations=data.get("iterations", 4),
-#             backgroundVideo=data.get("backgroundType", "urban"),
-#             backgroundMusic=data.get("musicType", "synthwave"),
-#             voiceType=data.get("voiceType", "male"),
-#             subtitleColor=data.get("subtitleColor", "#ff00ff")
-#         )
-        
-#         logger.info(f"Content request: {content_request}")
-        
-#         service = await get_story_chain_service()
-#         result = await service.generate_content_pipeline(content_request)
-        
-#         response_data = {
-#             "success": True,
-#             "video_data": result["video_data"],
-#             "content_type": result["content_type"],
-#             "metrics": result["metrics"]
-#         }
-        
-#         logger.info("Returning video response")
-#         return JsonResponse(response_data, status=200)
-            
-#     except Exception as e:
-#         error_msg = f"Content generation error: {str(e)}"
-#         logger.error(error_msg)
-#         return JsonResponse({"error": error_msg}, status=500)
 @csrf_exempt
 async def generate_content(request):
     if request.method != 'POST':
@@ -170,34 +122,25 @@ async def generate_content(request):
     try:
         data = json.loads(request.body)
         
-        # TESTING ONLY: Override parameters for testing
-        test_mode = "hf_image"  # Options: "normal", "hf_image", "hf_video"
-        
-        # Force Hugging Face for testing
-        if test_mode == "hf_image":
-            logger.info("TESTING MODE: Using Hugging Face for image generation")
-            use_hf_inference = True
-            use_hf_video = False
-        elif test_mode == "hf_video":
-            logger.info("TESTING MODE: Using Hugging Face for direct video generation")
-            use_hf_inference = True
-            use_hf_video = True
-        else:
-            use_hf_inference = not COLAB_URL
-            use_hf_video = False
+        if not COLAB_URL or not COLAB_URL_2 or not COLAB_URL_3:
+            logger.error("COLAB_URL or COLAB_URL_2 or COLAB_URL_3 not set")
+            return JsonResponse({
+                "error": "Required services not configured. Update URLs first."
+            }, status=500)
             
+        # content_request = ContentRequest(
+        #     prompt=data.get("prompt"),
+        #     genre=data.get("genre", "Adventure"),
+        #     iterations=data.get("iterations", 4)
+        # )
         content_request = ContentRequest(
             prompt=data.get("prompt"),
             genre=data.get("genre", "cyberpunk"),
             iterations=data.get("iterations", 4),
             backgroundVideo=data.get("backgroundType", "urban"),
             backgroundMusic=data.get("musicType", "synthwave"),
-            voiceType=data.get("voiceType", "v2/en_speaker_6"),
-            subtitleColor=data.get("subtitleColor", "#ff00ff"),
-            useHfInference=use_hf_inference,
-            useHfVideo=use_hf_video,
-            hfImageModel="black-forest-labs/FLUX.1-schnell",
-            hfVideoModel="Wan-AI/Wan2.1-T2V-14B"
+            voiceType=data.get("voiceType", "male"),
+            subtitleColor=data.get("subtitleColor", "#ff00ff")
         )
         
         logger.info(f"Content request: {content_request}")
@@ -218,8 +161,65 @@ async def generate_content(request):
     except Exception as e:
         error_msg = f"Content generation error: {str(e)}"
         logger.error(error_msg)
-        logger.error(traceback.format_exc())  # Add traceback for better debugging
         return JsonResponse({"error": error_msg}, status=500)
+# @csrf_exempt
+# async def generate_content(request):
+#     if request.method != 'POST':
+#         return JsonResponse({"error": "Invalid request method."}, status=405)
+        
+#     try:
+#         data = json.loads(request.body)
+        
+#         # TESTING ONLY: Override parameters for testing
+#         test_mode = "normal"  # Options: "normal", "hf_image", "hf_video"
+        
+#         # Force Hugging Face for testing
+#         if test_mode == "hf_image":
+#             logger.info("TESTING MODE: Using Hugging Face for image generation")
+#             use_hf_inference = True
+#             use_hf_video = False
+#         elif test_mode == "hf_video":
+#             logger.info("TESTING MODE: Using Hugging Face for direct video generation")
+#             use_hf_inference = True
+#             use_hf_video = True
+#         else:
+#             use_hf_inference = not COLAB_URL
+#             use_hf_video = False
+            
+#         content_request = ContentRequest(
+#             prompt=data.get("prompt"),
+#             genre=data.get("genre", "cyberpunk"),
+#             iterations=data.get("iterations", 4),
+#             backgroundVideo=data.get("backgroundType", "urban"),
+#             backgroundMusic=data.get("musicType", "synthwave"),
+#             voiceType=data.get("voiceType", "v2/en_speaker_6"),
+#             subtitleColor=data.get("subtitleColor", "#ff00ff"),
+#             useHfInference=use_hf_inference,
+#             useHfVideo=use_hf_video,
+#             hfImageModel="black-forest-labs/FLUX.1-schnell",
+#             hfVideoModel="Wan-AI/Wan2.1-T2V-14B"
+#         )
+        
+#         logger.info(f"Content request: {content_request}")
+        
+#         service = await get_story_chain_service()
+#         result = await service.generate_content_pipeline(content_request)
+        
+#         response_data = {
+#             "success": True,
+#             "video_data": result["video_data"],
+#             "content_type": result["content_type"],
+#             "metrics": result["metrics"]
+#         }
+        
+#         logger.info("Returning video response")
+#         return JsonResponse(response_data, status=200)
+            
+#     except Exception as e:
+#         error_msg = f"Content generation error: {str(e)}"
+#         logger.error(error_msg)
+#         logger.error(traceback.format_exc())  # Add traceback for better debugging
+#         return JsonResponse({"error": error_msg}, status=500)
     
 
 @csrf_exempt

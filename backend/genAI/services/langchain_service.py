@@ -35,10 +35,10 @@ class ContentRequest(BaseModel):
     backgroundMusic: str = Field(default="1", description="Background music type")
     voiceType: str = Field(default="v2/en_speaker_6", description="Voice type (male or female)")
     subtitleColor: str = Field(default="#ff00ff", description="Subtitle text color")
-    useHfInference: bool = Field(default=False, description="Whether to use Hugging Face Inference API")
-    hfImageModel: str = Field(default="black-forest-labs/FLUX.1-schnell", description="HF model for image generation")
-    useHfVideo: bool = Field(default=False, description="Whether to use Hugging Face for video generation")
-    hfVideoModel: str = Field(default="Wan-AI/Wan2.1-T2V-14B", description="HF model for video generation")
+    # useHfInference: bool = Field(default=False, description="Whether to use Hugging Face Inference API")
+    # hfImageModel: str = Field(default="black-forest-labs/FLUX.1-schnell", description="HF model for image generation")
+    # useHfVideo: bool = Field(default=False, description="Whether to use Hugging Face for video generation")
+    # hfVideoModel: str = Field(default="Wan-AI/Wan2.1-T2V-14B", description="HF model for video generation")
 
 class ContentResponse(BaseModel):
     """Response model for each story iteration"""
@@ -342,6 +342,9 @@ class StoryIterationChain:
             return None
                             
     
+    
+    
+    # WORKSSSSSSS
     @traceable(run_type="chain")
     async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
         """Generate complete story with images and voice narration, return as video"""
@@ -354,110 +357,32 @@ class StoryIterationChain:
                 video_manager = None
                 s3_handler = None
                 try:
-                    # Log the request parameters
+                    logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
                     logger.info(f"Processing request with settings: genre={request.genre}, "
                             f"background={request.backgroundVideo}, music={request.backgroundMusic}, "
                             f"voice={request.voiceType}, color={request.subtitleColor}")
-                    logger.info(f"Using Hugging Face: {request.useHfInference}")
-                    logger.info(f"Hugging Face Video: {request.useHfVideo}")
                     
-                    # Verify required services
-                    if not self.voice_url:
-                        raise ValueError("Voice URL is required")
-                        
+                    print(f"Using Whisper endpoint: {self.whisper_url}")
+                    
                     if not self.whisper_url:
                         raise ValueError("Whisper URL is required")
                     
-                    # Check available image generation methods
-                    use_hf_for_images = False
-                    if not self.colab_url:
-                        # No Colab URL, must use Hugging Face
-                        logger.info("No Colab URL available, will use Hugging Face for image generation")
-                        use_hf_for_images = True
-                    elif request.useHfInference:
-                        # Explicitly requested Hugging Face
-                        logger.info("Explicitly requested Hugging Face for image generation")
-                        use_hf_for_images = True
-                    
-                    # Initialize services
                     video_manager = VideoManager()
                     s3_handler = S3Handler()
-                    
-                    # Direct text-to-video generation if requested
-                    if request.useHfVideo:
-                        logger.info(f"Attempting direct text-to-video generation with model {request.hfVideoModel}")
-                        try:
-                            # Import the Hugging Face service only when needed
-                            from .huggingface_service import generate_video_with_hf
-                            
-                            # Generate the video directly with Hugging Face
-                            video_data = await generate_video_with_hf(
-                                prompt=request.prompt,
-                                model_id=request.hfVideoModel
-                            )
-                            
-                            if video_data:
-                                # Successfully generated video, return it directly
-                                logger.info("Successfully generated video with Hugging Face")
-                                
-                                # Clean up base64 prefix if present
-                                if "base64," in video_data:
-                                    video_data = video_data.split("base64,")[1]
-                                
-                                return {
-                                    "success": True,
-                                    "video_data": video_data,
-                                    "content_type": "video/mp4",
-                                    "metrics": {
-                                        "total_tokens": self.token_callback.total_tokens,
-                                        "successful_requests": self.token_callback.successful_requests,
-                                        "failed_requests": self.token_callback.failed_requests,
-                                        "method": "huggingface_direct_video"
-                                    }
-                                }
-                            else:
-                                logger.warning("Failed to generate video directly, falling back to standard pipeline")
-                        except Exception as e:
-                            logger.error(f"Error in direct video generation: {str(e)}")
-                            logger.exception("Full error details:")
-                            logger.info("Falling back to standard pipeline")
-                    
-                    # If we get here, we're using the standard iterative pipeline
                     previous_content = None
                     segments_data = []
                     
-                    # Process each iteration
                     for i in range(request.iterations):
                         try:
-                            logger.info(f"\n=== Processing Iteration {i + 1}/{request.iterations} ===")
-                            
-                            # Generate story content
+                            print(f"\n=== Processing Iteration {i + 1} ===")
                             iteration_result = await self.generate_iteration(
                                 input_text=request.prompt if i == 0 else "",
                                 genre=request.genre,
                                 previous_content=previous_content
                             )
-                            
-                            # Generate image based on available methods
-                            if use_hf_for_images:
-                                logger.info(f"Using Hugging Face for image generation with model {request.hfImageModel}")
-                                
-                                # Import the Hugging Face service only when needed
-                                from .huggingface_service import generate_image_with_hf
-                                
-                                image_task = asyncio.create_task(
-                                    generate_image_with_hf(
-                                        prompt=iteration_result["image"],
-                                        model_id=request.hfImageModel
-                                    )
-                                )
-                            else:
-                                logger.info(f"Using Colab for image generation at URL: {self.colab_url}")
-                                image_task = asyncio.create_task(
-                                    self.generate_image(iteration_result["image"], session)
-                                )
-                            
-                            # Generate voice narration
+                            image_task = asyncio.create_task(
+                                self.generate_image(iteration_result["image"], session)
+                            )
                             voice_task = asyncio.create_task(
                                 self.generate_voice(
                                     text=iteration_result["story"], 
@@ -465,25 +390,14 @@ class StoryIterationChain:
                                     session=session
                                 )
                             )
-                            
-                            # Wait for both tasks to complete
-                            logger.info("Waiting for image and voice generation to complete...")
                             image_data, audio_data = await asyncio.gather(
                                 image_task,
                                 voice_task,
                                 return_exceptions=False 
                             )
                             
-                            # Validate media generation
-                            if not image_data:
-                                raise ValueError(f"Failed to generate image for iteration {i + 1}")
-                                
-                            if not audio_data:
-                                raise ValueError(f"Failed to generate audio for iteration {i + 1}")
-                            
-                            logger.info(f"Successfully generated media for iteration {i + 1}")
-                            
-                            # Create segment data
+                            if not image_data or not audio_data:
+                                raise ValueError(f"Failed to generate media for iteration {i + 1}")
                             segment_data = {
                                 'image_data': image_data,
                                 'audio_data': audio_data,
@@ -491,8 +405,6 @@ class StoryIterationChain:
                                 'subtitle_color': request.subtitleColor
                             }
                             
-                            # Create video segment
-                            logger.info(f"Creating video segment for iteration {i + 1}")
                             segment_path = await video_manager.create_segment(
                                 segment_data,
                                 i,
@@ -503,7 +415,6 @@ class StoryIterationChain:
                             previous_content = iteration_result
                             segments_data.append(segment_path)
                             
-                            # Add metadata for tracing
                             run.add_metadata({
                                 f"iteration_{i+1}": {
                                     "story": iteration_result["story"],
@@ -517,34 +428,30 @@ class StoryIterationChain:
                             
                         except Exception as e:
                             logger.error(f"Error in iteration {i + 1}: {str(e)}")
-                            logger.exception("Full error details:")
                             raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
                     
-                    # Get background video and music files from S3
-                    logger.info("Retrieving background media from S3")
+                    # Get background video and music files from S3 based on user selection
                     background_video_path = s3_handler.get_media_file('video', request.backgroundVideo)
                     background_audio_path = s3_handler.get_media_file('music', request.backgroundMusic)
                     
                     logger.info(f"Selected background video: {background_video_path}")
                     logger.info(f"Selected background music: {background_audio_path}")
                     
-                    # Handle special "NONE" value or missing files
-                    if not background_video_path or background_video_path == "NONE":
-                        background_video_path = "NONE" if background_video_path == "NONE" else "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
-                        logger.info(f"Using video path: {background_video_path}")
+                    # Fallback to hardcoded paths if S3 download fails
+                    if not background_video_path:
+                        background_video_path = "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+                        logger.warning(f"Using fallback video path: {background_video_path}")
                     
-                    if not background_audio_path or background_audio_path == "NONE":
-                        background_audio_path = "NONE" if background_audio_path == "NONE" else "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
-                        logger.info(f"Using audio path: {background_audio_path}")
+                    if not background_audio_path:
+                        background_audio_path = "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+                        logger.warning(f"Using fallback audio path: {background_audio_path}")
                     
-                    # Concatenate video segments
                     logger.info("Starting video concatenation")
                     final_video_path = video_manager.concatenate_segments(
                         background_audio_path=background_audio_path,
                         split_video_path=background_video_path
                     )
                     
-                    # Encode final video
                     logger.info("Encoding final video")
                     with open(final_video_path, 'rb') as video_file:
                         video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
@@ -556,19 +463,15 @@ class StoryIterationChain:
                         "metrics": {
                             "total_tokens": self.token_callback.total_tokens,
                             "successful_requests": self.token_callback.successful_requests,
-                            "failed_requests": self.token_callback.failed_requests,
-                            "method": "iterative_pipeline",
-                            "image_source": "huggingface" if use_hf_for_images else "colab"
+                            "failed_requests": self.token_callback.failed_requests
                         }
                     }
                     
                 except Exception as e:
                     logger.error(f"Error in video generation pipeline: {str(e)}")
-                    logger.exception("Full error details:")
                     raise
                 
                 finally:
-                    # Clean up resources
                     if video_manager:
                         try:
                             video_manager.cleanup()
@@ -580,255 +483,115 @@ class StoryIterationChain:
                             s3_handler.cleanup()
                         except Exception as e:
                             logger.error(f"Error during S3 handler cleanup: {str(e)}")
-    
-    #WORKSSSSSSS
-    # @traceable(run_type="chain")
-    # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
-    #     """Generate complete story with images and voice narration, return as video"""
-    #     async with aiohttp.ClientSession() as session:
-    #         with trace(
-    #             name="Full Story Generation",
-    #             run_type="chain",
-    #             project_name=os.getenv("LANGSMITH_PROJECT")
-    #         ) as run:
-    #             video_manager = None
-    #             s3_handler = None
-    #             try:
-    #                 logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
-    #                 logger.info(f"Processing request with settings: genre={request.genre}, "
-    #                         f"background={request.backgroundVideo}, music={request.backgroundMusic}, "
-    #                         f"voice={request.voiceType}, color={request.subtitleColor}")
-                    
-    #                 print(f"Using Whisper endpoint: {self.whisper_url}")
-                    
-    #                 if not self.whisper_url:
-    #                     raise ValueError("Whisper URL is required")
-                    
-    #                 video_manager = VideoManager()
-    #                 s3_handler = S3Handler()
-    #                 previous_content = None
-    #                 segments_data = []
-                    
-    #                 for i in range(request.iterations):
-    #                     try:
-    #                         print(f"\n=== Processing Iteration {i + 1} ===")
-    #                         iteration_result = await self.generate_iteration(
-    #                             input_text=request.prompt if i == 0 else "",
-    #                             genre=request.genre,
-    #                             previous_content=previous_content
-    #                         )
-    #                         image_task = asyncio.create_task(
-    #                             self.generate_image(iteration_result["image"], session)
-    #                         )
-    #                         voice_task = asyncio.create_task(
-    #                             self.generate_voice(
-    #                                 text=iteration_result["story"], 
-    #                                 voice_type=request.voiceType,
-    #                                 session=session
-    #                             )
-    #                         )
-    #                         image_data, audio_data = await asyncio.gather(
-    #                             image_task,
-    #                             voice_task,
-    #                             return_exceptions=False 
-    #                         )
-                            
-    #                         if not image_data or not audio_data:
-    #                             raise ValueError(f"Failed to generate media for iteration {i + 1}")
-    #                         segment_data = {
-    #                             'image_data': image_data,
-    #                             'audio_data': audio_data,
-    #                             'story_text': iteration_result["story"],
-    #                             'subtitle_color': request.subtitleColor
-    #                         }
-                            
-    #                         segment_path = await video_manager.create_segment(
-    #                             segment_data,
-    #                             i,
-    #                             whisper_url=self.whisper_url,
-    #                             session=session
-    #                         )
-                            
-    #                         previous_content = iteration_result
-    #                         segments_data.append(segment_path)
-                            
-    #                         run.add_metadata({
-    #                             f"iteration_{i+1}": {
-    #                                 "story": iteration_result["story"],
-    #                                 "image_description": iteration_result["image"],
-    #                                 "status": "processed",
-    #                                 "genre": request.genre
-    #                             }
-    #                         })
-                            
-    #                         logger.info(f"Completed iteration {i + 1}")
-                            
-    #                     except Exception as e:
-    #                         logger.error(f"Error in iteration {i + 1}: {str(e)}")
-    #                         raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
-                    
-    #                 # Get background video and music files from S3 based on user selection
-    #                 background_video_path = s3_handler.get_media_file('video', request.backgroundVideo)
-    #                 background_audio_path = s3_handler.get_media_file('music', request.backgroundMusic)
-                    
-    #                 logger.info(f"Selected background video: {background_video_path}")
-    #                 logger.info(f"Selected background music: {background_audio_path}")
-                    
-    #                 # Fallback to hardcoded paths if S3 download fails
-    #                 if not background_video_path:
-    #                     background_video_path = "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
-    #                     logger.warning(f"Using fallback video path: {background_video_path}")
-                    
-    #                 if not background_audio_path:
-    #                     background_audio_path = "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
-    #                     logger.warning(f"Using fallback audio path: {background_audio_path}")
-                    
-    #                 logger.info("Starting video concatenation")
-    #                 final_video_path = video_manager.concatenate_segments(
-    #                     background_audio_path=background_audio_path,
-    #                     split_video_path=background_video_path
-    #                 )
-                    
-    #                 logger.info("Encoding final video")
-    #                 with open(final_video_path, 'rb') as video_file:
-    #                     video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
-                    
-    #                 return {
-    #                     "success": True,
-    #                     "video_data": video_base64,
-    #                     "content_type": "video/mp4",
-    #                     "metrics": {
-    #                         "total_tokens": self.token_callback.total_tokens,
-    #                         "successful_requests": self.token_callback.successful_requests,
-    #                         "failed_requests": self.token_callback.failed_requests
-    #                     }
-    #                 }
-                    
-    #             except Exception as e:
-    #                 logger.error(f"Error in video generation pipeline: {str(e)}")
-    #                 raise
-                
-    #             finally:
-    #                 if video_manager:
-    #                     try:
-    #                         video_manager.cleanup()
-    #                     except Exception as e:
-    #                         logger.error(f"Error during video manager cleanup: {str(e)}")
-                    
-    #                 if s3_handler:
-    #                     try:
-    #                         s3_handler.cleanup()
-    #                     except Exception as e:
-    #                         logger.error(f"Error during S3 handler cleanup: {str(e)}")
                             
                             
                             
 
 # @traceable(run_type="chain")
-    # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
-    #     """Generate complete story with images and voice narration, return as video"""
-    #     async with aiohttp.ClientSession() as session:
-    #         with trace(
-    #             name="Full Story Generation",
-    #             run_type="chain",
-    #             project_name=os.getenv("LANGSMITH_PROJECT")
-    #         ) as run:
-    #             video_manager = None
-    #             try:
-    #                 logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
-    #                 print(f"Using Whisper endpoint: {self.whisper_url}")
+#     async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
+#         """Generate complete story with images and voice narration, return as video"""
+#         async with aiohttp.ClientSession() as session:
+#             with trace(
+#                 name="Full Story Generation",
+#                 run_type="chain",
+#                 project_name=os.getenv("LANGSMITH_PROJECT")
+#             ) as run:
+#                 video_manager = None
+#                 try:
+#                     logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
+#                     print(f"Using Whisper endpoint: {self.whisper_url}")
                     
-    #                 if not self.whisper_url:
-    #                     raise ValueError("Whisper URL is required")
+#                     if not self.whisper_url:
+#                         raise ValueError("Whisper URL is required")
                     
-    #                 video_manager = VideoManager()
-    #                 previous_content = None
-    #                 segments_data = []
+#                     video_manager = VideoManager()
+#                     previous_content = None
+#                     segments_data = []
                     
-    #                 for i in range(request.iterations):
-    #                     try:
-    #                         print(f"\n=== Processing Iteration {i + 1} ===")
-    #                         iteration_result = await self.generate_iteration(
-    #                             input_text=request.prompt if i == 0 else "",
-    #                             genre=request.genre,
-    #                             previous_content=previous_content
-    #                         )
-    #                         image_task = asyncio.create_task(
-    #                             self.generate_image(iteration_result["image"], session)
-    #                         )
-    #                         voice_task = asyncio.create_task(
-    #                             self.generate_voice(iteration_result["story"], session)
-    #                         )
-    #                         image_data, audio_data = await asyncio.gather(
-    #                             image_task,
-    #                             voice_task,
-    #                             return_exceptions=False 
-    #                         )
+#                     for i in range(request.iterations):
+#                         try:
+#                             print(f"\n=== Processing Iteration {i + 1} ===")
+#                             iteration_result = await self.generate_iteration(
+#                                 input_text=request.prompt if i == 0 else "",
+#                                 genre=request.genre,
+#                                 previous_content=previous_content
+#                             )
+#                             image_task = asyncio.create_task(
+#                                 self.generate_image(iteration_result["image"], session)
+#                             )
+#                             voice_task = asyncio.create_task(
+#                                 self.generate_voice(iteration_result["story"], session)
+#                             )
+#                             image_data, audio_data = await asyncio.gather(
+#                                 image_task,
+#                                 voice_task,
+#                                 return_exceptions=False 
+#                             )
                             
-    #                         if not image_data or not audio_data:
-    #                             raise ValueError(f"Failed to generate media for iteration {i + 1}")
-    #                         segment_data = {
-    #                             'image_data': image_data,
-    #                             'audio_data': audio_data,
-    #                             'story_text': iteration_result["story"]
-    #                         }
+#                             if not image_data or not audio_data:
+#                                 raise ValueError(f"Failed to generate media for iteration {i + 1}")
+#                             segment_data = {
+#                                 'image_data': image_data,
+#                                 'audio_data': audio_data,
+#                                 'story_text': iteration_result["story"]
+#                             }
                             
-    #                         segment_path = await video_manager.create_segment(
-    #                             segment_data,
-    #                             i,
-    #                             whisper_url=self.whisper_url,
-    #                             session=session
-    #                         )
+#                             segment_path = await video_manager.create_segment(
+#                                 segment_data,
+#                                 i,
+#                                 whisper_url=self.whisper_url,
+#                                 session=session
+#                             )
                             
-    #                         previous_content = iteration_result
-    #                         segments_data.append(segment_path)
+#                             previous_content = iteration_result
+#                             segments_data.append(segment_path)
                             
-    #                         run.add_metadata({
-    #                             f"iteration_{i+1}": {
-    #                                 "story": iteration_result["story"],
-    #                                 "image_description": iteration_result["image"],
-    #                                 "status": "processed",
-    #                                 "genre": request.genre
-    #                             }
-    #                         })
+#                             run.add_metadata({
+#                                 f"iteration_{i+1}": {
+#                                     "story": iteration_result["story"],
+#                                     "image_description": iteration_result["image"],
+#                                     "status": "processed",
+#                                     "genre": request.genre
+#                                 }
+#                             })
                             
-    #                         logger.info(f"Completed iteration {i + 1}")
+#                             logger.info(f"Completed iteration {i + 1}")
                             
-    #                     except Exception as e:
-    #                         logger.error(f"Error in iteration {i + 1}: {str(e)}")
-    #                         raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
+#                         except Exception as e:
+#                             logger.error(f"Error in iteration {i + 1}: {str(e)}")
+#                             raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
                     
-    #                 logger.info("Starting video concatenation")
-    #                 final_video_path = video_manager.concatenate_segments(
-    #                     background_audio_path="E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav",
-    #                     # split_video_path="E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4",
-    #                     )
+#                     logger.info("Starting video concatenation")
+#                     final_video_path = video_manager.concatenate_segments(
+#                         background_audio_path="E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav",
+#                         # split_video_path="E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4",
+#                         )
                     
-    #                 logger.info("Encoding final video")
-    #                 with open(final_video_path, 'rb') as video_file:
-    #                     video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
+#                     logger.info("Encoding final video")
+#                     with open(final_video_path, 'rb') as video_file:
+#                         video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
                     
-    #                 return {
-    #                     "success": True,
-    #                     "video_data": video_base64,
-    #                     "content_type": "video/mp4",
-    #                     "metrics": {
-    #                         "total_tokens": self.token_callback.total_tokens,
-    #                         "successful_requests": self.token_callback.successful_requests,
-    #                         "failed_requests": self.token_callback.failed_requests
-    #                     }
-    #                 }
+#                     return {
+#                         "success": True,
+#                         "video_data": video_base64,
+#                         "content_type": "video/mp4",
+#                         "metrics": {
+#                             "total_tokens": self.token_callback.total_tokens,
+#                             "successful_requests": self.token_callback.successful_requests,
+#                             "failed_requests": self.token_callback.failed_requests
+#                         }
+#                     }
                     
-    #             except Exception as e:
-    #                 logger.error(f"Error in video generation pipeline: {str(e)}")
-    #                 raise
+#                 except Exception as e:
+#                     logger.error(f"Error in video generation pipeline: {str(e)}")
+#                     raise
                 
-    #             finally:
-    #                 if video_manager:
-    #                     try:
-    #                         video_manager.cleanup()
-    #                     except Exception as e:
-    #                         logger.error(f"Error during video manager cleanup: {str(e)}")
+#                 finally:
+#                     if video_manager:
+#                         try:
+#                             video_manager.cleanup()
+#                         except Exception as e:
+#                             logger.error(f"Error during video manager cleanup: {str(e)}")
     
     
     # @traceable(run_type="chain")
@@ -960,50 +723,50 @@ class StoryIterationChain:
     
 
 # async def generate_voice(self, text: str, session: aiohttp.ClientSession) -> Optional[str]:
-    #     """Generate voice narration using Bark API"""
-    #     if not self.voice_url:
-    #         logger.error("Voice URL not set")
-    #         return None
+#         """Generate voice narration using Bark API"""
+#         if not self.voice_url:
+#             logger.error("Voice URL not set")
+#             return None
             
-    #     retries = 3
-    #     for attempt in range(retries):
-    #         try:
-    #             logger.info(f"Sending voice generation request for text: {text}")
+#         retries = 3
+#         for attempt in range(retries):
+#             try:
+#                 logger.info(f"Sending voice generation request for text: {text}")
                 
-    #             async with session.post(
-    #                 f"{self.voice_url}/generate_sound",
-    #                 json={"text": text},
-    #                 timeout=aiohttp.ClientTimeout(total=300)
-    #             ) as response:
-    #                 response.raise_for_status()
-    #                 result = await response.json()
+#                 async with session.post(
+#                     f"{self.voice_url}/generate_sound",
+#                     json={"text": text},
+#                     timeout=aiohttp.ClientTimeout(total=300)
+#                 ) as response:
+#                     response.raise_for_status()
+#                     result = await response.json()
                     
-    #                 if 'error' in result:
-    #                     logger.error(f"Error from voice generation: {result['error']}")
-    #                     if attempt < retries - 1:
-    #                         await asyncio.sleep(1)
-    #                         continue
-    #                     return None
+#                     if 'error' in result:
+#                         logger.error(f"Error from voice generation: {result['error']}")
+#                         if attempt < retries - 1:
+#                             await asyncio.sleep(1)
+#                             continue
+#                         return None
                         
-    #                 audio_data = result.get('audio_data')
-    #                 if not audio_data:
-    #                     logger.error("No audio data in response")
-    #                     if attempt < retries - 1:
-    #                         await asyncio.sleep(1)
-    #                         continue
-    #                     return None
+#                     audio_data = result.get('audio_data')
+#                     if not audio_data:
+#                         logger.error("No audio data in response")
+#                         if attempt < retries - 1:
+#                             await asyncio.sleep(1)
+#                             continue
+#                         return None
                     
-    #                 logger.info("Voice generated successfully")
-    #                 return audio_data
+#                     logger.info("Voice generated successfully")
+#                     return audio_data
                     
-    #         except Exception as e:
-    #             logger.error(f"Voice generation failed (attempt {attempt + 1}/{retries}): {str(e)}")
-    #             if attempt < retries - 1:
-    #                 await asyncio.sleep(1)
-    #                 continue
-    #             return None
+#             except Exception as e:
+#                 logger.error(f"Voice generation failed (attempt {attempt + 1}/{retries}): {str(e)}")
+#                 if attempt < retries - 1:
+#                     await asyncio.sleep(1)
+#                     continue
+#                 return None
                 
-    #     return None
+#         return None
     
     
     

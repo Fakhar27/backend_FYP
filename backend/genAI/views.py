@@ -114,6 +114,54 @@ async def get_story_chain_service():
         logger.error(f"Error creating StoryIterationChain service: {str(e)}")
         raise
 
+# @csrf_exempt
+# async def generate_content(request):
+#     if request.method != 'POST':
+#         return JsonResponse({"error": "Invalid request method."}, status=405)
+        
+#     try:
+#         data = json.loads(request.body)
+        
+#         if not COLAB_URL or not COLAB_URL_2 or not COLAB_URL_3:
+#             logger.error("COLAB_URL or COLAB_URL_2 or COLAB_URL_3 not set")
+#             return JsonResponse({
+#                 "error": "Required services not configured. Update URLs first."
+#             }, status=500)
+            
+#         # content_request = ContentRequest(
+#         #     prompt=data.get("prompt"),
+#         #     genre=data.get("genre", "Adventure"),
+#         #     iterations=data.get("iterations", 4)
+#         # )
+#         content_request = ContentRequest(
+#             prompt=data.get("prompt"),
+#             genre=data.get("genre", "cyberpunk"),
+#             iterations=data.get("iterations", 4),
+#             backgroundVideo=data.get("backgroundType", "urban"),
+#             backgroundMusic=data.get("musicType", "synthwave"),
+#             voiceType=data.get("voiceType", "male"),
+#             subtitleColor=data.get("subtitleColor", "#ff00ff")
+#         )
+        
+#         logger.info(f"Content request: {content_request}")
+        
+#         service = await get_story_chain_service()
+#         result = await service.generate_content_pipeline(content_request)
+        
+#         response_data = {
+#             "success": True,
+#             "video_data": result["video_data"],
+#             "content_type": result["content_type"],
+#             "metrics": result["metrics"]
+#         }
+        
+#         logger.info("Returning video response")
+#         return JsonResponse(response_data, status=200)
+            
+#     except Exception as e:
+#         error_msg = f"Content generation error: {str(e)}"
+#         logger.error(error_msg)
+#         return JsonResponse({"error": error_msg}, status=500)
 @csrf_exempt
 async def generate_content(request):
     if request.method != 'POST':
@@ -122,25 +170,30 @@ async def generate_content(request):
     try:
         data = json.loads(request.body)
         
-        if not COLAB_URL or not COLAB_URL_2 or not COLAB_URL_3:
-            logger.error("COLAB_URL or COLAB_URL_2 or COLAB_URL_3 not set")
+        # Check for required Colab URLs - voice and whisper are required, but image URL is now optional
+        if not COLAB_URL_2 or not COLAB_URL_3:
+            logger.error("COLAB_URL_2 or COLAB_URL_3 not set")
             return JsonResponse({
-                "error": "Required services not configured. Update URLs first."
+                "error": "Required voice and whisper services not configured. Update URLs first."
             }, status=500)
             
-        # content_request = ContentRequest(
-        #     prompt=data.get("prompt"),
-        #     genre=data.get("genre", "Adventure"),
-        #     iterations=data.get("iterations", 4)
-        # )
+        # For image generation, COLAB_URL is now optional
+        use_hf_inference = not COLAB_URL  # If COLAB_URL is not set, use Hugging Face Inference API
+        
+        if use_hf_inference:
+            logger.info("Using Hugging Face Inference API for image generation")
+        else:
+            logger.info(f"Using Colab service for image generation at URL: {COLAB_URL}")
+            
         content_request = ContentRequest(
             prompt=data.get("prompt"),
             genre=data.get("genre", "cyberpunk"),
             iterations=data.get("iterations", 4),
             backgroundVideo=data.get("backgroundType", "urban"),
             backgroundMusic=data.get("musicType", "synthwave"),
-            voiceType=data.get("voiceType", "male"),
-            subtitleColor=data.get("subtitleColor", "#ff00ff")
+            voiceType=data.get("voiceType", "v2/en_speaker_6"),
+            subtitleColor=data.get("subtitleColor", "#ff00ff"),
+            useHfInference=use_hf_inference  # Pass this flag to the service
         )
         
         logger.info(f"Content request: {content_request}")
@@ -161,6 +214,7 @@ async def generate_content(request):
     except Exception as e:
         error_msg = f"Content generation error: {str(e)}"
         logger.error(error_msg)
+        logger.error(traceback.format_exc())  # Add traceback for better debugging
         return JsonResponse({"error": error_msg}, status=500)
     
 
@@ -259,3 +313,42 @@ def getNotes(request):
     Notes = user.notes_set.all()  
     serializer = notesSerializers(Notes, many=True)
     return Response(serializer.data)
+
+
+
+
+
+
+
+
+
+
+# def generate_image(request):
+#     if request.method == 'POST':
+#         try:
+#             data = json.loads(request.body)
+#             prompt = data.get('prompt')
+#             logger.info(f"Received prompt: {prompt}")
+#         except json.JSONDecodeError as e:
+#             logger.error(f"JSON decode error: {str(e)}")
+#             return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+#         if not prompt:
+#             logger.error("No prompt provided")
+#             return JsonResponse({"error": "Prompt is required"}, status=400)
+
+#         try:
+#             logger.info(f"Sending request to Hugging Face API with prompt: {prompt}")
+#             response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
+#             response.raise_for_status()
+
+#             image_bytes = response.content
+#             image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+#             logger.info("Successfully generated image")
+#             return JsonResponse({"image_data": image_base64}, status=200)
+#         except requests.exceptions.RequestException as e:
+#             logger.error(f"Error from Hugging Face API: {str(e)}")
+#             return JsonResponse({"error": f"Error from Hugging Face API: {str(e)}"}, status=500)
+#         except Exception as e:
+#             logger.error(f"Unexpected error: {str(e)}")
+#             return JsonResponse({"error": f"Unexpected error: {str(e)}"}, status=500)

@@ -104,7 +104,8 @@ async def get_story_chain_service():
     """Async factory function for StoryIterationChain"""
     try:
         service = StoryIterationChain(
-            colab_url=COLAB_URL, 
+            # colab_url=COLAB_URL,
+            colab_url="abcd", 
             voice_url=COLAB_URL_2, 
             whisper_url=COLAB_URL_3
         )

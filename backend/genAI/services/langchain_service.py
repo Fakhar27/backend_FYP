@@ -345,9 +345,152 @@ class StoryIterationChain:
     
     
     # WORKSSSSSSS
+    # @traceable(run_type="chain")
+    # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
+    #     """Generate complete story with images and voice narration, return as video"""
+    #     async with aiohttp.ClientSession() as session:
+    #         with trace(
+    #             name="Full Story Generation",
+    #             run_type="chain",
+    #             project_name=os.getenv("LANGSMITH_PROJECT")
+    #         ) as run:
+    #             video_manager = None
+    #             s3_handler = None
+    #             try:
+    #                 logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
+    #                 logger.info(f"Processing request with settings: genre={request.genre}, "
+    #                         f"background={request.backgroundVideo}, music={request.backgroundMusic}, "
+    #                         f"voice={request.voiceType}, color={request.subtitleColor}")
+                    
+    #                 print(f"Using Whisper endpoint: {self.whisper_url}")
+                    
+    #                 if not self.whisper_url:
+    #                     raise ValueError("Whisper URL is required")
+                    
+    #                 video_manager = VideoManager()
+    #                 s3_handler = S3Handler()
+    #                 previous_content = None
+    #                 segments_data = []
+                    
+    #                 for i in range(request.iterations):
+    #                     try:
+    #                         print(f"\n=== Processing Iteration {i + 1} ===")
+    #                         iteration_result = await self.generate_iteration(
+    #                             input_text=request.prompt if i == 0 else "",
+    #                             genre=request.genre,
+    #                             previous_content=previous_content
+    #                         )
+    #                         image_task = asyncio.create_task(
+    #                             self.generate_image(iteration_result["image"], session)
+    #                         )
+    #                         voice_task = asyncio.create_task(
+    #                             self.generate_voice(
+    #                                 text=iteration_result["story"], 
+    #                                 voice_type=request.voiceType,
+    #                                 session=session
+    #                             )
+    #                         )
+    #                         image_data, audio_data = await asyncio.gather(
+    #                             image_task,
+    #                             voice_task,
+    #                             return_exceptions=False 
+    #                         )
+                            
+    #                         if not image_data or not audio_data:
+    #                             raise ValueError(f"Failed to generate media for iteration {i + 1}")
+    #                         segment_data = {
+    #                             'image_data': image_data,
+    #                             'audio_data': audio_data,
+    #                             'story_text': iteration_result["story"],
+    #                             'subtitle_color': request.subtitleColor
+    #                         }
+                            
+    #                         segment_path = await video_manager.create_segment(
+    #                             segment_data,
+    #                             i,
+    #                             whisper_url=self.whisper_url,
+    #                             session=session
+    #                         )
+                            
+    #                         previous_content = iteration_result
+    #                         segments_data.append(segment_path)
+                            
+    #                         run.add_metadata({
+    #                             f"iteration_{i+1}": {
+    #                                 "story": iteration_result["story"],
+    #                                 "image_description": iteration_result["image"],
+    #                                 "status": "processed",
+    #                                 "genre": request.genre
+    #                             }
+    #                         })
+                            
+    #                         logger.info(f"Completed iteration {i + 1}")
+                            
+    #                     except Exception as e:
+    #                         logger.error(f"Error in iteration {i + 1}: {str(e)}")
+    #                         raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
+                    
+    #                 # Get background video and music files from S3 based on user selection
+    #                 background_video_path = s3_handler.get_media_file('video', request.backgroundVideo)
+    #                 background_audio_path = s3_handler.get_media_file('music', request.backgroundMusic)
+                    
+    #                 logger.info(f"Selected background video: {background_video_path}")
+    #                 logger.info(f"Selected background music: {background_audio_path}")
+                    
+    #                 # Fallback to hardcoded paths if S3 download fails
+    #                 if not background_video_path:
+    #                     background_video_path = "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+    #                     logger.warning(f"Using fallback video path: {background_video_path}")
+                    
+    #                 if not background_audio_path:
+    #                     background_audio_path = "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+    #                     logger.warning(f"Using fallback audio path: {background_audio_path}")
+                    
+    #                 logger.info("Starting video concatenation")
+    #                 final_video_path = video_manager.concatenate_segments(
+    #                     background_audio_path=background_audio_path,
+    #                     split_video_path=background_video_path
+    #                 )
+                    
+    #                 logger.info("Encoding final video")
+    #                 with open(final_video_path, 'rb') as video_file:
+    #                     video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
+                    
+    #                 return {
+    #                     "success": True,
+    #                     "video_data": video_base64,
+    #                     "content_type": "video/mp4",
+    #                     "metrics": {
+    #                         "total_tokens": self.token_callback.total_tokens,
+    #                         "successful_requests": self.token_callback.successful_requests,
+    #                         "failed_requests": self.token_callback.failed_requests
+    #                     }
+    #                 }
+                    
+    #             except Exception as e:
+    #                 logger.error(f"Error in video generation pipeline: {str(e)}")
+    #                 raise
+                
+    #             finally:
+    #                 if video_manager:
+    #                     try:
+    #                         video_manager.cleanup()
+    #                     except Exception as e:
+    #                         logger.error(f"Error during video manager cleanup: {str(e)}")
+                    
+    #                 if s3_handler:
+    #                     try:
+    #                         s3_handler.cleanup()
+    #                     except Exception as e:
+    #                         logger.error(f"Error during S3 handler cleanup: {str(e)}")
+    
+    
+    
+    
+    
     @traceable(run_type="chain")
     async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
-        """Generate complete story with images and voice narration, return as video"""
+        """Generate complete story with hardcoded images and stories"""
         async with aiohttp.ClientSession() as session:
             with trace(
                 name="Full Story Generation",
@@ -357,6 +500,7 @@ class StoryIterationChain:
                 video_manager = None
                 s3_handler = None
                 try:
+                    # Ensure all required URLs are available except Colab URL
                     logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
                     logger.info(f"Processing request with settings: genre={request.genre}, "
                             f"background={request.backgroundVideo}, music={request.backgroundMusic}, "
@@ -366,45 +510,76 @@ class StoryIterationChain:
                     
                     if not self.whisper_url:
                         raise ValueError("Whisper URL is required")
+                        
+                    if not self.voice_url:
+                        raise ValueError("Voice URL is required")
+                    
+                    # Get hardcoded story prompts and image paths
+                    hardcoded_story_prompts = [
+                        "A lone traveler journeyed across vast golden dunes following mysterious footprints, his flowing robes catching the desert wind as he pursued his unknown destiny.",
+                        "At sunset, he discovered a perfect circular oasis with reflecting palms offering refuge and a sign to continue his quest beyond this desert sanctuary.",
+                        "Venturing further, he found where desert transformed into paradise, wading through turquoise waters between tall palms as golden light filtered through the lush canopy.",
+                        "In a hidden clearing, he sat beside a small pool, his touch creating ripples that awakened golden symbols above an ancient tree, revealing the sacred connection between human intention and nature's magic."
+                    ]
+                    
+                    hardcoded_image_paths = [
+                        "E:/fyp_backend/backend/genAI/image_man_in_desert_1.webp",
+                        "E:/fyp_backend/backend/genAI/image_man_in_desert_2.webp",
+                        "E:/fyp_backend/backend/genAI/image_man_in_desert_3.webp",
+                        "E:/fyp_backend/backend/genAI/image_man_in_desert_4.webp"
+                    ]
+                    
+                    # Limit the iterations to the number of hardcoded items we have
+                    iterations = min(request.iterations, len(hardcoded_story_prompts))
+                    logger.info(f"Using {iterations} hardcoded iterations")
                     
                     video_manager = VideoManager()
                     s3_handler = S3Handler()
-                    previous_content = None
                     segments_data = []
                     
-                    for i in range(request.iterations):
+                    # Process each iteration with hardcoded content
+                    for i in range(iterations):
                         try:
-                            print(f"\n=== Processing Iteration {i + 1} ===")
-                            iteration_result = await self.generate_iteration(
-                                input_text=request.prompt if i == 0 else "",
-                                genre=request.genre,
-                                previous_content=previous_content
-                            )
-                            image_task = asyncio.create_task(
-                                self.generate_image(iteration_result["image"], session)
-                            )
-                            voice_task = asyncio.create_task(
-                                self.generate_voice(
-                                    text=iteration_result["story"], 
-                                    voice_type=request.voiceType,
-                                    session=session
-                                )
-                            )
-                            image_data, audio_data = await asyncio.gather(
-                                image_task,
-                                voice_task,
-                                return_exceptions=False 
+                            logger.info(f"\n=== Processing Iteration {i + 1} ===")
+                            
+                            # Get hardcoded story for this iteration
+                            story_text = hardcoded_story_prompts[i]
+                            logger.info(f"Using hardcoded story: {story_text}")
+                            
+                            # Read hardcoded image file
+                            image_path = hardcoded_image_paths[i]
+                            logger.info(f"Using hardcoded image: {image_path}")
+                            
+                            # Convert image file to base64
+                            try:
+                                with open(image_path, 'rb') as image_file:
+                                    image_bytes = image_file.read()
+                                    image_data = f"data:image/webp;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+                                    logger.info(f"Successfully loaded hardcoded image {i+1}")
+                            except Exception as e:
+                                logger.error(f"Error loading hardcoded image: {str(e)}")
+                                raise ValueError(f"Failed to load hardcoded image for iteration {i + 1}")
+                            
+                            # Generate voice narration using the actual service
+                            logger.info(f"Generating voice narration for hardcoded story {i+1}")
+                            audio_data = await self.generate_voice(
+                                text=story_text,
+                                voice_type=request.voiceType,
+                                session=session
                             )
                             
-                            if not image_data or not audio_data:
-                                raise ValueError(f"Failed to generate media for iteration {i + 1}")
+                            if not audio_data:
+                                raise ValueError(f"Failed to generate audio for iteration {i + 1}")
+                            
+                            # Create segment with hardcoded image and generated audio
                             segment_data = {
                                 'image_data': image_data,
                                 'audio_data': audio_data,
-                                'story_text': iteration_result["story"],
+                                'story_text': story_text,
                                 'subtitle_color': request.subtitleColor
                             }
                             
+                            # Create segment with whisper for subtitles
                             segment_path = await video_manager.create_segment(
                                 segment_data,
                                 i,
@@ -412,13 +587,13 @@ class StoryIterationChain:
                                 session=session
                             )
                             
-                            previous_content = iteration_result
                             segments_data.append(segment_path)
                             
+                            # Add metadata for tracing
                             run.add_metadata({
                                 f"iteration_{i+1}": {
-                                    "story": iteration_result["story"],
-                                    "image_description": iteration_result["image"],
+                                    "story": story_text,
+                                    "image_path": image_path,
                                     "status": "processed",
                                     "genre": request.genre
                                 }
@@ -439,19 +614,21 @@ class StoryIterationChain:
                     
                     # Fallback to hardcoded paths if S3 download fails
                     if not background_video_path:
-                        background_video_path = "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+                        background_video_path = "E:/fyp_backend/backend/genAI/split_screen_video_1.mp4"
                         logger.warning(f"Using fallback video path: {background_video_path}")
                     
                     if not background_audio_path:
-                        background_audio_path = "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+                        background_audio_path = "E:/fyp_backend/backend/genAI/backgroundMusic1.wav"
                         logger.warning(f"Using fallback audio path: {background_audio_path}")
                     
+                    # Concatenate video segments
                     logger.info("Starting video concatenation")
                     final_video_path = video_manager.concatenate_segments(
                         background_audio_path=background_audio_path,
                         split_video_path=background_video_path
                     )
                     
+                    # Encode final video
                     logger.info("Encoding final video")
                     with open(final_video_path, 'rb') as video_file:
                         video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
@@ -463,7 +640,9 @@ class StoryIterationChain:
                         "metrics": {
                             "total_tokens": self.token_callback.total_tokens,
                             "successful_requests": self.token_callback.successful_requests,
-                            "failed_requests": self.token_callback.failed_requests
+                            "failed_requests": self.token_callback.failed_requests,
+                            "hardcoded_images": True,
+                            "method": "hardcoded_images_pipeline"
                         }
                     }
                     

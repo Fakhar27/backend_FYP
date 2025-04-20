@@ -170,20 +170,21 @@ async def generate_content(request):
     try:
         data = json.loads(request.body)
         
-        # Check for required Colab URLs - voice and whisper are required, but image URL is now optional
-        if not COLAB_URL_2 or not COLAB_URL_3:
-            logger.error("COLAB_URL_2 or COLAB_URL_3 not set")
-            return JsonResponse({
-                "error": "Required voice and whisper services not configured. Update URLs first."
-            }, status=500)
-            
-        # For image generation, COLAB_URL is now optional
-        use_hf_inference = not COLAB_URL  # If COLAB_URL is not set, use Hugging Face Inference API
+        # TESTING ONLY: Override parameters for testing
+        test_mode = "hf_image"  # Options: "normal", "hf_image", "hf_video"
         
-        if use_hf_inference:
-            logger.info("Using Hugging Face Inference API for image generation")
+        # Force Hugging Face for testing
+        if test_mode == "hf_image":
+            logger.info("TESTING MODE: Using Hugging Face for image generation")
+            use_hf_inference = True
+            use_hf_video = False
+        elif test_mode == "hf_video":
+            logger.info("TESTING MODE: Using Hugging Face for direct video generation")
+            use_hf_inference = True
+            use_hf_video = True
         else:
-            logger.info(f"Using Colab service for image generation at URL: {COLAB_URL}")
+            use_hf_inference = not COLAB_URL
+            use_hf_video = False
             
         content_request = ContentRequest(
             prompt=data.get("prompt"),
@@ -193,7 +194,10 @@ async def generate_content(request):
             backgroundMusic=data.get("musicType", "synthwave"),
             voiceType=data.get("voiceType", "v2/en_speaker_6"),
             subtitleColor=data.get("subtitleColor", "#ff00ff"),
-            useHfInference=use_hf_inference  # Pass this flag to the service
+            useHfInference=use_hf_inference,
+            useHfVideo=use_hf_video,
+            hfImageModel="black-forest-labs/FLUX.1-schnell",
+            hfVideoModel="Wan-AI/Wan2.1-T2V-14B"
         )
         
         logger.info(f"Content request: {content_request}")

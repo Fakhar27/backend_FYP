@@ -290,7 +290,58 @@ class StoryIterationChain:
                 
         return None
 
+    async def generate_image_hf(self, prompt: str, model_id: str = "black-forest-labs/FLUX.1-schnell") -> Optional[str]:
+        """Generate image using Hugging Face API with direct API calls"""
+        try:
+            logger.info(f"Using HuggingFace direct API for image generation with model: {model_id}")
+            logger.info(f"Prompt: {prompt}")
+
+            # Import here to avoid circular imports (as in your original code)
+            # NOTE: This assumes huggingface_service contains the actual implementation
+            from .huggingface_service import generate_image_with_hf
+
+            # Call the direct API function (assuming it's correctly implemented in huggingface_service)
+            image_data = await generate_image_with_hf(prompt, model_id)
+
+            if not image_data:
+                logger.error("No image data returned from Hugging Face")
+                return None
+
+            logger.info("Successfully generated image with Hugging Face")
+            return image_data
+
+        except Exception as e:
+            logger.error(f"Error in HF image generation: {str(e)}")
+            # logger.error(traceback.format_exc())
+            return None
+
+
+    async def generate_video_hf(self, prompt: str, model_id: str = "cerspense/zeroscope_v2_XL") -> Optional[str]:
+        """Generate video directly using Hugging Face API"""
+        try:
+            logger.info(f"Using HuggingFace direct API for video generation with model: {model_id}")
+            logger.info(f"Prompt: {prompt}")
+
+            # Import here to avoid circular imports (as in your original code)
+            # NOTE: This assumes huggingface_service contains the actual implementation
+            from .huggingface_service import generate_video_with_hf
+
+            # Call the direct API function (assuming it's correctly implemented in huggingface_service)
+            video_data = await generate_video_with_hf(prompt, model_id)
+
+            if not video_data:
+                logger.error("No video data returned from Hugging Face")
+                return None
+
+            logger.info("Successfully generated video with Hugging Face")
+            return video_data
+
+        except Exception as e:
+            logger.error(f"Error in HF video generation: {str(e)}")
+            # logger.error(traceback.format_exc())
+            return None
                             
+    
     @traceable(run_type="chain")
     async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
         """Generate complete story with images and voice narration, return as video"""
@@ -303,78 +354,99 @@ class StoryIterationChain:
                 video_manager = None
                 s3_handler = None
                 try:
-                    logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
+                    # Log the request parameters
                     logger.info(f"Processing request with settings: genre={request.genre}, "
                             f"background={request.backgroundVideo}, music={request.backgroundMusic}, "
                             f"voice={request.voiceType}, color={request.subtitleColor}")
                     logger.info(f"Using Hugging Face: {request.useHfInference}")
+                    logger.info(f"Hugging Face Video: {request.useHfVideo}")
                     
+                    # Verify required services
+                    if not self.voice_url:
+                        raise ValueError("Voice URL is required")
+                        
                     if not self.whisper_url:
                         raise ValueError("Whisper URL is required")
                     
-                    if not self.voice_url:
-                        raise ValueError("Voice URL is required")
+                    # Check available image generation methods
+                    use_hf_for_images = False
+                    if not self.colab_url:
+                        # No Colab URL, must use Hugging Face
+                        logger.info("No Colab URL available, will use Hugging Face for image generation")
+                        use_hf_for_images = True
+                    elif request.useHfInference:
+                        # Explicitly requested Hugging Face
+                        logger.info("Explicitly requested Hugging Face for image generation")
+                        use_hf_for_images = True
                     
-                    # Check if we're using Hugging Face and if it's available
-                    if request.useHfInference and not self.hf_available:
-                        logger.error("Hugging Face service requested but not available")
-                        raise ValueError("Hugging Face service is not available. Please install huggingface_hub.")
-                    
-                    # If using normal Colab image generation, make sure the URL is available
-                    if not request.useHfInference and not self.colab_url:
-                        logger.error("Colab URL is required for image generation but not provided")
-                        raise ValueError("Colab URL is required for image generation")
-                    
+                    # Initialize services
                     video_manager = VideoManager()
                     s3_handler = S3Handler()
-                    previous_content = None
-                    segments_data = []
                     
-                    # We can also attempt direct text-to-video generation if requested
-                    if request.useHfVideo and self.hf_available:
-                        logger.info(f"Using Hugging Face for direct text-to-video generation with model {request.hfVideoModel}")
+                    # Direct text-to-video generation if requested
+                    if request.useHfVideo:
+                        logger.info(f"Attempting direct text-to-video generation with model {request.hfVideoModel}")
                         try:
+                            # Import the Hugging Face service only when needed
+                            from .huggingface_service import generate_video_with_hf
+                            
                             # Generate the video directly with Hugging Face
-                            video_data = await self.hf_service.generate_video(
+                            video_data = await generate_video_with_hf(
                                 prompt=request.prompt,
                                 model_id=request.hfVideoModel
                             )
                             
-                            if not video_data:
-                                logger.error("Failed to generate video with HF, falling back to standard pipeline")
-                            else:
-                                # We got a video! Return it directly
+                            if video_data:
+                                # Successfully generated video, return it directly
                                 logger.info("Successfully generated video with Hugging Face")
+                                
+                                # Clean up base64 prefix if present
+                                if "base64," in video_data:
+                                    video_data = video_data.split("base64,")[1]
+                                
                                 return {
                                     "success": True,
-                                    "video_data": video_data.split("base64,")[1] if "base64," in video_data else video_data,
+                                    "video_data": video_data,
                                     "content_type": "video/mp4",
                                     "metrics": {
                                         "total_tokens": self.token_callback.total_tokens,
                                         "successful_requests": self.token_callback.successful_requests,
                                         "failed_requests": self.token_callback.failed_requests,
-                                        "method": "huggingface_video_direct"
+                                        "method": "huggingface_direct_video"
                                     }
                                 }
+                            else:
+                                logger.warning("Failed to generate video directly, falling back to standard pipeline")
                         except Exception as e:
-                            logger.error(f"Error in HF video generation: {str(e)}")
+                            logger.error(f"Error in direct video generation: {str(e)}")
+                            logger.exception("Full error details:")
                             logger.info("Falling back to standard pipeline")
                     
-                    # Standard iterative pipeline
+                    # If we get here, we're using the standard iterative pipeline
+                    previous_content = None
+                    segments_data = []
+                    
+                    # Process each iteration
                     for i in range(request.iterations):
                         try:
-                            print(f"\n=== Processing Iteration {i + 1} ===")
+                            logger.info(f"\n=== Processing Iteration {i + 1}/{request.iterations} ===")
+                            
+                            # Generate story content
                             iteration_result = await self.generate_iteration(
                                 input_text=request.prompt if i == 0 else "",
                                 genre=request.genre,
                                 previous_content=previous_content
                             )
                             
-                            # Choose image generation method based on configuration
-                            if request.useHfInference and self.hf_available:
+                            # Generate image based on available methods
+                            if use_hf_for_images:
                                 logger.info(f"Using Hugging Face for image generation with model {request.hfImageModel}")
+                                
+                                # Import the Hugging Face service only when needed
+                                from .huggingface_service import generate_image_with_hf
+                                
                                 image_task = asyncio.create_task(
-                                    self.hf_service.generate_image(
+                                    generate_image_with_hf(
                                         prompt=iteration_result["image"],
                                         model_id=request.hfImageModel
                                     )
@@ -384,7 +456,8 @@ class StoryIterationChain:
                                 image_task = asyncio.create_task(
                                     self.generate_image(iteration_result["image"], session)
                                 )
-                                
+                            
+                            # Generate voice narration
                             voice_task = asyncio.create_task(
                                 self.generate_voice(
                                     text=iteration_result["story"], 
@@ -393,15 +466,24 @@ class StoryIterationChain:
                                 )
                             )
                             
+                            # Wait for both tasks to complete
+                            logger.info("Waiting for image and voice generation to complete...")
                             image_data, audio_data = await asyncio.gather(
                                 image_task,
                                 voice_task,
                                 return_exceptions=False 
                             )
                             
-                            if not image_data or not audio_data:
-                                raise ValueError(f"Failed to generate media for iteration {i + 1}")
+                            # Validate media generation
+                            if not image_data:
+                                raise ValueError(f"Failed to generate image for iteration {i + 1}")
+                                
+                            if not audio_data:
+                                raise ValueError(f"Failed to generate audio for iteration {i + 1}")
                             
+                            logger.info(f"Successfully generated media for iteration {i + 1}")
+                            
+                            # Create segment data
                             segment_data = {
                                 'image_data': image_data,
                                 'audio_data': audio_data,
@@ -409,6 +491,8 @@ class StoryIterationChain:
                                 'subtitle_color': request.subtitleColor
                             }
                             
+                            # Create video segment
+                            logger.info(f"Creating video segment for iteration {i + 1}")
                             segment_path = await video_manager.create_segment(
                                 segment_data,
                                 i,
@@ -419,6 +503,7 @@ class StoryIterationChain:
                             previous_content = iteration_result
                             segments_data.append(segment_path)
                             
+                            # Add metadata for tracing
                             run.add_metadata({
                                 f"iteration_{i+1}": {
                                     "story": iteration_result["story"],
@@ -432,30 +517,34 @@ class StoryIterationChain:
                             
                         except Exception as e:
                             logger.error(f"Error in iteration {i + 1}: {str(e)}")
+                            logger.exception("Full error details:")
                             raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
                     
-                    # Get background video and music files from S3 based on user selection
+                    # Get background video and music files from S3
+                    logger.info("Retrieving background media from S3")
                     background_video_path = s3_handler.get_media_file('video', request.backgroundVideo)
                     background_audio_path = s3_handler.get_media_file('music', request.backgroundMusic)
                     
                     logger.info(f"Selected background video: {background_video_path}")
                     logger.info(f"Selected background music: {background_audio_path}")
                     
-                    # Fallback to hardcoded paths if S3 download fails
+                    # Handle special "NONE" value or missing files
                     if not background_video_path or background_video_path == "NONE":
                         background_video_path = "NONE" if background_video_path == "NONE" else "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
-                        logger.warning(f"Using path: {background_video_path}")
+                        logger.info(f"Using video path: {background_video_path}")
                     
                     if not background_audio_path or background_audio_path == "NONE":
                         background_audio_path = "NONE" if background_audio_path == "NONE" else "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
-                        logger.warning(f"Using path: {background_audio_path}")
+                        logger.info(f"Using audio path: {background_audio_path}")
                     
+                    # Concatenate video segments
                     logger.info("Starting video concatenation")
                     final_video_path = video_manager.concatenate_segments(
                         background_audio_path=background_audio_path,
                         split_video_path=background_video_path
                     )
                     
+                    # Encode final video
                     logger.info("Encoding final video")
                     with open(final_video_path, 'rb') as video_file:
                         video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
@@ -468,17 +557,18 @@ class StoryIterationChain:
                             "total_tokens": self.token_callback.total_tokens,
                             "successful_requests": self.token_callback.successful_requests,
                             "failed_requests": self.token_callback.failed_requests,
-                            "method": "iterative_pipeline"
+                            "method": "iterative_pipeline",
+                            "image_source": "huggingface" if use_hf_for_images else "colab"
                         }
                     }
                     
                 except Exception as e:
                     logger.error(f"Error in video generation pipeline: {str(e)}")
-                    import traceback
-                    logger.error(traceback.format_exc())
+                    logger.exception("Full error details:")
                     raise
                 
                 finally:
+                    # Clean up resources
                     if video_manager:
                         try:
                             video_manager.cleanup()
@@ -490,13 +580,8 @@ class StoryIterationChain:
                             s3_handler.cleanup()
                         except Exception as e:
                             logger.error(f"Error during S3 handler cleanup: {str(e)}")
-                            
-                    if hasattr(self, 'hf_service') and self.hf_service:
-                        try:
-                            self.hf_service.cleanup()
-                        except Exception as e:
-                            logger.error(f"Error during HF service cleanup: {str(e)}")                        
     
+    #WORKSSSSSSS
     # @traceable(run_type="chain")
     # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
     #     """Generate complete story with images and voice narration, return as video"""
@@ -919,3 +1004,217 @@ class StoryIterationChain:
     #             return None
                 
     #     return None
+    
+    
+    
+    
+    
+    
+    
+    
+    # @traceable(run_type="chain")
+    # async def generate_content_pipeline(self, request: ContentRequest) -> Dict[str, Any]:
+    #     """Generate complete story with images and voice narration, return as video"""
+    #     async with aiohttp.ClientSession() as session:
+    #         with trace(
+    #             name="Full Story Generation",
+    #             run_type="chain",
+    #             project_name=os.getenv("LANGSMITH_PROJECT")
+    #         ) as run:
+    #             video_manager = None
+    #             s3_handler = None
+    #             try:
+    #                 logger.info(f"Initializing pipeline with Whisper URL: {self.whisper_url}")
+    #                 logger.info(f"Processing request with settings: genre={request.genre}, "
+    #                         f"background={request.backgroundVideo}, music={request.backgroundMusic}, "
+    #                         f"voice={request.voiceType}, color={request.subtitleColor}")
+    #                 logger.info(f"Using Hugging Face: {request.useHfInference}")
+                    
+    #                 if not self.whisper_url:
+    #                     raise ValueError("Whisper URL is required")
+                    
+    #                 if not self.voice_url:
+    #                     raise ValueError("Voice URL is required")
+                    
+    #                 # Check if we're using Hugging Face and if it's available
+    #                 if request.useHfInference and not self.hf_available:
+    #                     logger.error("Hugging Face service requested but not available")
+    #                     raise ValueError("Hugging Face service is not available. Please install huggingface_hub.")
+                    
+    #                 # If using normal Colab image generation, make sure the URL is available
+    #                 if not request.useHfInference and not self.colab_url:
+    #                     logger.error("Colab URL is required for image generation but not provided")
+    #                     raise ValueError("Colab URL is required for image generation")
+                    
+    #                 video_manager = VideoManager()
+    #                 s3_handler = S3Handler()
+    #                 previous_content = None
+    #                 segments_data = []
+                    
+    #                 # We can also attempt direct text-to-video generation if requested
+    #                 if request.useHfVideo and self.hf_available:
+    #                     logger.info(f"Using Hugging Face for direct text-to-video generation with model {request.hfVideoModel}")
+    #                     try:
+    #                         # Generate the video directly with Hugging Face
+    #                         video_data = await self.hf_service.generate_video(
+    #                             prompt=request.prompt,
+    #                             model_id=request.hfVideoModel
+    #                         )
+                            
+    #                         if not video_data:
+    #                             logger.error("Failed to generate video with HF, falling back to standard pipeline")
+    #                         else:
+    #                             # We got a video! Return it directly
+    #                             logger.info("Successfully generated video with Hugging Face")
+    #                             return {
+    #                                 "success": True,
+    #                                 "video_data": video_data.split("base64,")[1] if "base64," in video_data else video_data,
+    #                                 "content_type": "video/mp4",
+    #                                 "metrics": {
+    #                                     "total_tokens": self.token_callback.total_tokens,
+    #                                     "successful_requests": self.token_callback.successful_requests,
+    #                                     "failed_requests": self.token_callback.failed_requests,
+    #                                     "method": "huggingface_video_direct"
+    #                                 }
+    #                             }
+    #                     except Exception as e:
+    #                         logger.error(f"Error in HF video generation: {str(e)}")
+    #                         logger.info("Falling back to standard pipeline")
+                    
+    #                 # Standard iterative pipeline
+    #                 for i in range(request.iterations):
+    #                     try:
+    #                         print(f"\n=== Processing Iteration {i + 1} ===")
+    #                         iteration_result = await self.generate_iteration(
+    #                             input_text=request.prompt if i == 0 else "",
+    #                             genre=request.genre,
+    #                             previous_content=previous_content
+    #                         )
+                            
+    #                         # Choose image generation method based on configuration
+    #                         if request.useHfInference and self.hf_available:
+    #                             logger.info(f"Using Hugging Face for image generation with model {request.hfImageModel}")
+    #                             image_task = asyncio.create_task(
+    #                                 self.hf_service.generate_image(
+    #                                     prompt=iteration_result["image"],
+    #                                     model_id=request.hfImageModel
+    #                                 )
+    #                             )
+    #                         else:
+    #                             logger.info(f"Using Colab for image generation at URL: {self.colab_url}")
+    #                             image_task = asyncio.create_task(
+    #                                 self.generate_image(iteration_result["image"], session)
+    #                             )
+                                
+    #                         voice_task = asyncio.create_task(
+    #                             self.generate_voice(
+    #                                 text=iteration_result["story"], 
+    #                                 voice_type=request.voiceType,
+    #                                 session=session
+    #                             )
+    #                         )
+                            
+    #                         image_data, audio_data = await asyncio.gather(
+    #                             image_task,
+    #                             voice_task,
+    #                             return_exceptions=False 
+    #                         )
+                            
+    #                         if not image_data or not audio_data:
+    #                             raise ValueError(f"Failed to generate media for iteration {i + 1}")
+                            
+    #                         segment_data = {
+    #                             'image_data': image_data,
+    #                             'audio_data': audio_data,
+    #                             'story_text': iteration_result["story"],
+    #                             'subtitle_color': request.subtitleColor
+    #                         }
+                            
+    #                         segment_path = await video_manager.create_segment(
+    #                             segment_data,
+    #                             i,
+    #                             whisper_url=self.whisper_url,
+    #                             session=session
+    #                         )
+                            
+    #                         previous_content = iteration_result
+    #                         segments_data.append(segment_path)
+                            
+    #                         run.add_metadata({
+    #                             f"iteration_{i+1}": {
+    #                                 "story": iteration_result["story"],
+    #                                 "image_description": iteration_result["image"],
+    #                                 "status": "processed",
+    #                                 "genre": request.genre
+    #                             }
+    #                         })
+                            
+    #                         logger.info(f"Completed iteration {i + 1}")
+                            
+    #                     except Exception as e:
+    #                         logger.error(f"Error in iteration {i + 1}: {str(e)}")
+    #                         raise ValueError(f"Failed in iteration {i + 1}: {str(e)}")
+                    
+    #                 # Get background video and music files from S3 based on user selection
+    #                 background_video_path = s3_handler.get_media_file('video', request.backgroundVideo)
+    #                 background_audio_path = s3_handler.get_media_file('music', request.backgroundMusic)
+                    
+    #                 logger.info(f"Selected background video: {background_video_path}")
+    #                 logger.info(f"Selected background music: {background_audio_path}")
+                    
+    #                 # Fallback to hardcoded paths if S3 download fails
+    #                 if not background_video_path or background_video_path == "NONE":
+    #                     background_video_path = "NONE" if background_video_path == "NONE" else "E:\\fyp_backend\\backend\\genAI\\split_screen_video_1.mp4"
+    #                     logger.warning(f"Using path: {background_video_path}")
+                    
+    #                 if not background_audio_path or background_audio_path == "NONE":
+    #                     background_audio_path = "NONE" if background_audio_path == "NONE" else "E:\\fyp_backend\\backend\\genAI\\backgroundMusic1.wav"
+    #                     logger.warning(f"Using path: {background_audio_path}")
+                    
+    #                 logger.info("Starting video concatenation")
+    #                 final_video_path = video_manager.concatenate_segments(
+    #                     background_audio_path=background_audio_path,
+    #                     split_video_path=background_video_path
+    #                 )
+                    
+    #                 logger.info("Encoding final video")
+    #                 with open(final_video_path, 'rb') as video_file:
+    #                     video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
+                    
+    #                 return {
+    #                     "success": True,
+    #                     "video_data": video_base64,
+    #                     "content_type": "video/mp4",
+    #                     "metrics": {
+    #                         "total_tokens": self.token_callback.total_tokens,
+    #                         "successful_requests": self.token_callback.successful_requests,
+    #                         "failed_requests": self.token_callback.failed_requests,
+    #                         "method": "iterative_pipeline"
+    #                     }
+    #                 }
+                    
+    #             except Exception as e:
+    #                 logger.error(f"Error in video generation pipeline: {str(e)}")
+    #                 import traceback
+    #                 logger.error(traceback.format_exc())
+    #                 raise
+                
+    #             finally:
+    #                 if video_manager:
+    #                     try:
+    #                         video_manager.cleanup()
+    #                     except Exception as e:
+    #                         logger.error(f"Error during video manager cleanup: {str(e)}")
+                    
+    #                 if s3_handler:
+    #                     try:
+    #                         s3_handler.cleanup()
+    #                     except Exception as e:
+    #                         logger.error(f"Error during S3 handler cleanup: {str(e)}")
+                            
+    #                 if hasattr(self, 'hf_service') and self.hf_service:
+    #                     try:
+    #                         self.hf_service.cleanup()
+    #                     except Exception as e:
+    #                         logger.error(f"Error during HF service cleanup: {str(e)}")
+                            

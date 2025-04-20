@@ -32,6 +32,7 @@ class S3Handler:
             "synthwave": "background_music/backgroundMusic1.wav",
             "1": "background_music/backgroundMusic1.wav",
             "2": "background_music/audio2.wav",
+            "3": "background_music/Aadat.wav",
         }
         
         logger.info(f"S3Handler initialized with bucket: {self.bucket_name}")

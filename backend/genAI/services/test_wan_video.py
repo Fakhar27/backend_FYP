@@ -32,7 +32,7 @@ async def test_wan_video_generation():
         prompt = "A boat sailing on a serene lake at sunset with mountains in the background"
         genre = "cinematic"
         negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
-        iterations = 1  # Using just 1 for testing to make it faster
+        iterations = 2 
         guidance_scale = 5
 
         content_request = ContentRequest(
@@ -40,7 +40,11 @@ async def test_wan_video_generation():
             genre=genre,
             iterations=iterations,
             negative_prompt=negative_prompt,
-            guidance_scale=guidance_scale
+            guidance_scale=guidance_scale,
+            backgroundVideo="1",
+            backgroundMusic="1",
+            voiceType="v2/en_speaker_6",
+            subtitleColor="#ff00ff"
         )
 
         logger.info(f"Created content request: {content_request}")

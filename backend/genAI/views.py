@@ -115,6 +115,19 @@ async def get_story_chain_service():
         logger.error(f"Error creating StoryIterationChain service: {str(e)}")
         raise
     
+async def get_story_chain_service_2():
+    """Async factory function for StoryIterationChain"""
+    try:
+        service = StoryIterationChain(
+            voice_url=COLAB_URL_2, 
+            whisper_url=COLAB_URL_3
+        )
+        logger.info("StoryIterationChain service created successfully")
+        return service
+    except Exception as e:
+        logger.error(f"Error creating StoryIterationChain service: {str(e)}")
+        raise
+    
 @csrf_exempt
 async def wan_video_generation_request(request):
     try:
@@ -131,12 +144,17 @@ async def wan_video_generation_request(request):
             genre=genre,
             iterations=iterations,
             negative_prompt=negative_prompt,
-            guidance_scale=guidance_scale
+            guidance_scale=guidance_scale,
+            backgroundVideo="1",
+            backgroundMusic="1",
+            voiceType="v2/en_speaker_6",
+            subtitleColor="#ff00ff"
         )
         
         logger.info(f"Content request: {content_request}")
         
-        result = await StoryIterationChain.generate_video_WAN(content_request)
+        service = await get_story_chain_service_2()
+        result = await service.generate_video_WAN(content_request)
         
         response_data = {
             "success": True,

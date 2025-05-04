@@ -114,6 +114,27 @@ async def get_story_chain_service():
     except Exception as e:
         logger.error(f"Error creating StoryIterationChain service: {str(e)}")
         raise
+    
+@csrf_exempt
+def wan_video_generation_request(request):
+    try:
+        data = json.loads(request)
+        
+        prompt = data.get("prompt")
+        genre = data.get("genre","cinematic")
+        negative_prompt = data.get("negative_prompt")
+        guidance_scale = data.get("guidance_scale",5)
+        
+        content_request = ContentRequest(
+            prompt=prompt,
+            genre=genre,
+            negative_prompt=negative_prompt,
+            guidance_scale=guidance_scale
+        )
+        
+        logger.info(f"Content request: {content_request}")
+        
+        
 
 @csrf_exempt
 async def generate_content(request):
@@ -262,6 +283,8 @@ def generate_voice(request):
 
     return JsonResponse({"error": "Invalid method"}, status=405)
         
+    
+    
 
 
 # ---------------------- AUTH AND USER MANAGEMENT ----------------------

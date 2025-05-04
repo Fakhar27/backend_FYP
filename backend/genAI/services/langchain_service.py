@@ -35,6 +35,8 @@ class ContentRequest(BaseModel):
     backgroundMusic: str = Field(default="1", description="Background music type")
     voiceType: str = Field(default="v2/en_speaker_6", description="Voice type (male or female)")
     subtitleColor: str = Field(default="#ff00ff", description="Subtitle text color")
+    guidance_scale: int = Field(default=5)
+    negative_prompt: str = Field(default="Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards")
     # useHfInference: bool = Field(default=False, description="Whether to use Hugging Face Inference API")
     # hfImageModel: str = Field(default="black-forest-labs/FLUX.1-schnell", description="HF model for image generation")
     # useHfVideo: bool = Field(default=False, description="Whether to use Hugging Face for video generation")

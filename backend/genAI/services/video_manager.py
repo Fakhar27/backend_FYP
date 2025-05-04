@@ -583,6 +583,8 @@ class VideoManager:
                     logger.warning("Failed to close background audio")
                     
                     
+    
+    
     def concatenate_wan_videos(self, video_paths: List[str]) -> str:
         """
         Concatenate multiple videos into a single video file without any 
@@ -614,7 +616,9 @@ class VideoManager:
             # Save to temporary file
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
             logger.info(f"Writing concatenated video to: {output_path}")
-            final_clip.write_videofile(output_path, codec="libx264", verbose=False, logger=None)
+            
+            # Remove verbose parameter and use logger=None instead
+            final_clip.write_videofile(output_path, codec="libx264", logger=None)
             
             # Close clips to free resources
             for clip in clips:
@@ -627,6 +631,51 @@ class VideoManager:
         except Exception as e:
             logger.error(f"Error concatenating videos: {str(e)}")
             raise
+    
+    # def concatenate_wan_videos(self, video_paths: List[str]) -> str:
+    #     """
+    #     Concatenate multiple videos into a single video file without any 
+    #     transitions or effects - just simple concatenation.
+        
+    #     Args:
+    #         video_paths: List of paths to video files
+            
+    #     Returns:
+    #         Path to the concatenated video file
+    #     """
+    #     try:
+    #         if not video_paths:
+    #             raise ValueError("No video paths provided")
+                
+    #         logger.info(f"Concatenating {len(video_paths)} videos")
+                
+    #         # Load video clips
+    #         clips = []
+    #         for i, path in enumerate(video_paths):
+    #             logger.info(f"Loading video clip {i+1}/{len(video_paths)}: {path}")
+    #             clip = VideoFileClip(path)
+    #             clips.append(clip)
+                
+    #         # Concatenate clips (simple concatenation, no transitions)
+    #         logger.info("Performing basic concatenation without transitions")
+    #         final_clip = concatenate_videoclips(clips, method="chain")
+            
+    #         # Save to temporary file
+    #         output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+    #         logger.info(f"Writing concatenated video to: {output_path}")
+    #         final_clip.write_videofile(output_path, codec="libx264", verbose=False, logger=None)
+            
+    #         # Close clips to free resources
+    #         for clip in clips:
+    #             clip.close()
+    #         final_clip.close()
+            
+    #         logger.info("Video concatenation complete")
+    #         return output_path
+            
+    #     except Exception as e:
+    #         logger.error(f"Error concatenating videos: {str(e)}")
+    #         raise
         
         
     # # WORKS !!!

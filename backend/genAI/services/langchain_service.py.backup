@@ -294,82 +294,6 @@ class StoryIterationChain:
                 
         return None
     
-    # async def call_wan_api(self, prompt: str, negative_prompt: str = "", guidance_scale: float = 5) -> str:
-    #     """
-    #     Call the Wan API to generate a video.
-        
-    #     Args:
-    #         prompt: Text prompt for video generation
-    #         negative_prompt: Negative prompt
-    #         guidance_scale: Guidance scale
-            
-    #     Returns:
-    #         Path to the saved video file
-    #     """
-    #     try:
-    #         # API endpoint and token
-    #         api_url = "https://api.deepinfra.com/v1/inference/Wan-AI/Wan2.1-T2V-1.3B"
-    #         api_token = os.getenv("DEEPINFRA_TOKEN")
-            
-    #         if not api_token:
-    #             raise ValueError("DEEPINFRA_TOKEN environment variable not set")
-            
-    #         logger.info(f"Calling WAN API with prompt: '{prompt[:100]}...'")
-            
-    #         # Prepare request body
-    #         request_body = {
-    #             "prompt": prompt,
-    #             "guidance_scale": guidance_scale,
-    #             "negative_prompt":negative_prompt
-    #         }
-            
-            
-    #         # Make API request
-    #         headers = {
-    #             "Authorization": f"bearer {api_token}",
-    #             "Content-Type": "application/json"
-    #         }
-            
-    #         # Using aiohttp for async HTTP requests
-    #         async with aiohttp.ClientSession() as session:
-    #             async with session.post(api_url, json=request_body, headers=headers, timeout=600) as response:
-    #                 if response.status != 200:
-    #                     response_text = await response.text()
-    #                     raise Exception(f"API request failed with status {response.status}: {response_text}")
-                    
-    #                 response_data = await response.json()
-            
-    #         # Get video URL from response
-    #         video_url = response_data.get("video_url")
-    #         if not video_url:
-    #             raise Exception("No video URL in response")
-                
-    #         # If the URL is relative, make it absolute
-    #         if video_url.startswith("/"):
-    #             video_url = f"https://api.deepinfra.com{video_url}"
-                
-    #         logger.info(f"WAN API returned video URL: {video_url}")
-                
-    #         # Download the video
-    #         async with aiohttp.ClientSession() as session:
-    #             async with session.get(video_url, timeout=300) as video_response:
-    #                 if video_response.status != 200:
-    #                     raise Exception(f"Failed to download video: {video_response.status}")
-                    
-    #                 video_content = await video_response.read()
-            
-    #         # Save to temporary file
-    #         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    #         temp_file.write(video_content)
-    #         temp_file.close()
-            
-    #         logger.info(f"Video saved to temporary file: {temp_file.name}")
-            
-    #         return temp_file.name
-            
-    #     except Exception as e:
-    #         logger.error(f"Error calling WAN API: {str(e)}")
-    #         raise
     async def call_wan_api(self, prompt: str, negative_prompt: str = "", guidance_scale: float = 5) -> str:
         """
         Call the Wan API to generate a video.
@@ -380,7 +304,7 @@ class StoryIterationChain:
             guidance_scale: Guidance scale
             
         Returns:
-            Path to the saved video file or base64 data
+            Path to the saved video file
         """
         try:
             # API endpoint and token
@@ -396,8 +320,9 @@ class StoryIterationChain:
             request_body = {
                 "prompt": prompt,
                 "guidance_scale": guidance_scale,
-                "negative_prompt": negative_prompt
+                "negative_prompt":negative_prompt
             }
+            
             
             # Make API request
             headers = {
@@ -418,25 +343,6 @@ class StoryIterationChain:
             video_url = response_data.get("video_url")
             if not video_url:
                 raise Exception("No video URL in response")
-            
-            # Check if the URL is actually a data URL
-            if video_url.startswith("data:"):
-                logger.info("WAN API returned data URL")
-                # Extract base64 data
-                try:
-                    # Format: data:video/mp4;base64,XXXXXXX
-                    metadata, base64_data = video_url.split('base64,')
-                    
-                    # Write the decoded data to a temporary file
-                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                    temp_file.write(base64.b64decode(base64_data))
-                    temp_file.close()
-                    
-                    logger.info(f"Video data saved to temporary file: {temp_file.name}")
-                    return temp_file.name
-                except Exception as e:
-                    logger.error(f"Error extracting base64 data: {str(e)}")
-                    raise
                 
             # If the URL is relative, make it absolute
             if video_url.startswith("/"):

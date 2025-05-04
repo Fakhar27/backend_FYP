@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import base64
 from langchain_cohere.react_multi_hop.parsing import parse_answer_with_prefixes
 from langchain_core.callbacks import BaseCallbackHandler
+import time
 import json
 from langchain_core.outputs import LLMResult
 from langsmith import Client
@@ -291,6 +292,92 @@ class StoryIterationChain:
                 return None
                 
         return None
+    
+    
+    @traceable(run_type="chain")
+    async def generate_video_WAN(self, request: ContentRequest) -> Dict[str, Any]:
+        """
+        Generate a video using the Wan API based on story segments.
+        
+        This function:
+        1. Generates story segments and image descriptions using LLM
+        2. For each segment, calls the Wan API to generate a video
+        3. Concatenates all videos into a final video
+        4. Returns the final video data
+        """
+        start_time = time.time()
+        logger.info(f"Starting WAN video generation with prompt: '{request.prompt}'")
+        
+        # Track metrics
+        metrics = {
+            "start_time": start_time,
+            "iterations": request.iterations,
+            "genre": request.genre
+        }
+        
+        try:
+            # Initialize variables for tracking
+            previous_content = None
+            all_videos = []
+            all_prompts = []
+            
+            # Generate videos for each iteration
+            for i in range(request.iterations):
+                iteration_start = time.time()
+                logger.info(f"Starting iteration {i+1}/{request.iterations}")
+                
+                # Generate content for this iteration
+                if i == 0:
+                    content = await self.generate_iteration(request.prompt, request.genre)
+                else:
+                    content = await self.generate_iteration(request.prompt, request.genre, previous_content)
+                
+                # Save the content for the next iteration
+                previous_content = content
+                all_prompts.append(content)
+                
+                # Generate video using Wan API
+                video_path = await self.call_wan_api(
+                    prompt=content["image"],
+                    negative_prompt=request.negative_prompt,
+                    guidance_scale=request.guidance_scale
+                )
+                
+                all_videos.append(video_path)
+                logger.info(f"Completed iteration {i+1} in {time.time() - iteration_start:.2f}s")
+            
+            # Concatenate all videos
+            from .video_manager import VideoManager
+            video_manager = VideoManager()
+            final_video_path = video_manager.concatenate_wan_videos(all_videos)
+            
+            # Read the final video
+            with open(final_video_path, "rb") as f:
+                video_data = base64.b64encode(f.read()).decode("utf-8")
+            
+            # Cleanup temporary files
+            for video_path in all_videos:
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+            if os.path.exists(final_video_path):
+                os.remove(final_video_path)
+            
+            # Calculate metrics
+            end_time = time.time()
+            metrics["total_duration"] = end_time - start_time
+            metrics["prompts"] = all_prompts
+            
+            logger.info(f"Completed WAN video generation in {metrics['total_duration']:.2f}s")
+            
+            return {
+                "video_data": video_data,
+                "content_type": "video/mp4",
+                "metrics": metrics
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in WAN video generation: {str(e)}")
+            raise
 
     async def generate_image_hf(self, prompt: str, model_id: str = "black-forest-labs/FLUX.1-schnell") -> Optional[str]:
         """Generate image using Hugging Face API with direct API calls"""

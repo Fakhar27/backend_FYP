@@ -116,7 +116,7 @@ async def get_story_chain_service():
         raise
     
 @csrf_exempt
-def wan_video_generation_request(request):
+async def wan_video_generation_request(request):
     try:
         data = json.loads(request)
         
@@ -134,8 +134,22 @@ def wan_video_generation_request(request):
         
         logger.info(f"Content request: {content_request}")
         
+        result = await StoryIterationChain.generate_video_WAN(content_request)
         
-
+        response_data = {
+            "success": True,
+            "video_data": result["video_data"],
+            "content_type": result["content_type"],
+            "metrics": result["metrics"]
+        }
+        
+        logger.info("Returning video response")
+        return JsonResponse(response_data, status=200)
+    except Exception as e:
+        error_msg = f"Content generation error: {str(e)}"
+        logger.error(error_msg)
+        return JsonResponse({"error": error_msg}, status=500)
+        
 @csrf_exempt
 async def generate_content(request):
     if request.method != 'POST':

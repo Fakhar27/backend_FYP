@@ -144,9 +144,46 @@ async def wan_video_generation_request(request):
             genre=genre,
             iterations=iterations,
             negative_prompt=negative_prompt,
+            guidance_scale=guidance_scale
+        )
+        
+        logger.info(f"Content request: {content_request}")
+        
+        result = await StoryIterationChain.generate_video_WAN_semi(content_request)
+        
+        response_data = {
+            "success": True,
+            "video_data": result["video_data"],
+            "content_type": result["content_type"],
+            "metrics": result["metrics"]
+        }
+        
+        logger.info("Returning video response")
+        return JsonResponse(response_data, status=200)
+    except Exception as e:
+        error_msg = f"Content generation error: {str(e)}"
+        logger.error(error_msg)
+        return JsonResponse({"error": error_msg}, status=500)
+    
+@csrf_exempt
+async def wan_video_generation_request_complete_pipeline(request):
+    try:
+        data = json.loads(request)
+        
+        prompt = data.get("prompt")
+        genre = "cinematic"
+        negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
+        iterations = 3
+        guidance_scale = 5
+        
+        content_request = ContentRequest(
+            prompt=prompt,
+            genre=genre,
+            iterations=iterations,
+            negative_prompt=negative_prompt,
             guidance_scale=guidance_scale,
-            backgroundVideo="1",
-            backgroundMusic="1",
+            backgroundVideo="0",
+            backgroundMusic="0",
             voiceType="v2/en_speaker_6",
             subtitleColor="#ff00ff"
         )

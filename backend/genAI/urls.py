@@ -19,4 +19,5 @@ urlpatterns = [
     path('update-ngrok-url2/', views.update_ngrok_url_voice, name='update_ngrok_url'),
     path('update-ngrok-url3/', views.update_ngrok_url_whisper, name='update_ngrok_url_whisper'),
     path('wan_video_generation_request/',views.wan_video_generation_request, name='wan_video_generation_request'),
+    path('wan_video_generation_request_complete_pipeline/',views.wan_video_generation_request_complete_pipeline, name='wan_video_generation_request'),
 ]

@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import base64
 from langchain_cohere.react_multi_hop.parsing import parse_answer_with_prefixes
 from langchain_core.callbacks import BaseCallbackHandler
+import tempfile
 import time
 import json
 from langchain_core.outputs import LLMResult
@@ -292,6 +293,84 @@ class StoryIterationChain:
                 return None
                 
         return None
+    
+    async def call_wan_api(self, prompt: str, negative_prompt: str = "", guidance_scale: float = 5) -> str:
+        """
+        Call the Wan API to generate a video.
+        
+        Args:
+            prompt: Text prompt for video generation
+            negative_prompt: Negative prompt
+            guidance_scale: Guidance scale
+            
+        Returns:
+            Path to the saved video file
+        """
+        try:
+            # API endpoint and token
+            api_url = "https://api.deepinfra.com/v1/inference/Wan-AI/Wan2.1-T2V-1.3B"
+            api_token = os.getenv("DEEPINFRA_TOKEN")
+            
+            if not api_token:
+                raise ValueError("DEEPINFRA_TOKEN environment variable not set")
+            
+            logger.info(f"Calling WAN API with prompt: '{prompt[:100]}...'")
+            
+            # Prepare request body
+            request_body = {
+                "prompt": prompt,
+                "guidance_scale": guidance_scale
+            }
+            
+            if negative_prompt:
+                request_body["negative_prompt"] = negative_prompt
+            
+            # Make API request
+            headers = {
+                "Authorization": f"bearer {api_token}",
+                "Content-Type": "application/json"
+            }
+            
+            # Using aiohttp for async HTTP requests
+            async with aiohttp.ClientSession() as session:
+                async with session.post(api_url, json=request_body, headers=headers, timeout=600) as response:
+                    if response.status != 200:
+                        response_text = await response.text()
+                        raise Exception(f"API request failed with status {response.status}: {response_text}")
+                    
+                    response_data = await response.json()
+            
+            # Get video URL from response
+            video_url = response_data.get("video_url")
+            if not video_url:
+                raise Exception("No video URL in response")
+                
+            # If the URL is relative, make it absolute
+            if video_url.startswith("/"):
+                video_url = f"https://api.deepinfra.com{video_url}"
+                
+            logger.info(f"WAN API returned video URL: {video_url}")
+                
+            # Download the video
+            async with aiohttp.ClientSession() as session:
+                async with session.get(video_url, timeout=300) as video_response:
+                    if video_response.status != 200:
+                        raise Exception(f"Failed to download video: {video_response.status}")
+                    
+                    video_content = await video_response.read()
+            
+            # Save to temporary file
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+            temp_file.write(video_content)
+            temp_file.close()
+            
+            logger.info(f"Video saved to temporary file: {temp_file.name}")
+            
+            return temp_file.name
+            
+        except Exception as e:
+            logger.error(f"Error calling WAN API: {str(e)}")
+            raise
     
     
     @traceable(run_type="chain")

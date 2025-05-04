@@ -319,11 +319,10 @@ class StoryIterationChain:
             # Prepare request body
             request_body = {
                 "prompt": prompt,
-                "guidance_scale": guidance_scale
+                "guidance_scale": guidance_scale,
+                "negative_prompt":negative_prompt
             }
             
-            if negative_prompt:
-                request_body["negative_prompt"] = negative_prompt
             
             # Make API request
             headers = {
@@ -391,7 +390,6 @@ class StoryIterationChain:
         metrics = {
             "start_time": start_time,
             "iterations": request.iterations,
-            "genre": request.genre
         }
         
         try:

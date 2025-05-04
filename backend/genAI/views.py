@@ -123,11 +123,13 @@ async def wan_video_generation_request(request):
         prompt = data.get("prompt")
         genre = data.get("genre","cinematic")
         negative_prompt = data.get("negative_prompt")
+        iterations = 3
         guidance_scale = data.get("guidance_scale",5)
         
         content_request = ContentRequest(
             prompt=prompt,
             genre=genre,
+            iterations=iterations,
             negative_prompt=negative_prompt,
             guidance_scale=guidance_scale
         )

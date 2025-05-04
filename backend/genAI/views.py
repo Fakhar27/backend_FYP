@@ -121,10 +121,10 @@ async def wan_video_generation_request(request):
         data = json.loads(request)
         
         prompt = data.get("prompt")
-        genre = data.get("genre","cinematic")
-        negative_prompt = data.get("negative_prompt")
+        genre = "cinematic"
+        negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
         iterations = 3
-        guidance_scale = data.get("guidance_scale",5)
+        guidance_scale = 5
         
         content_request = ContentRequest(
             prompt=prompt,

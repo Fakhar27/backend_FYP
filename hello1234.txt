@@ -1,0 +1,13 @@
+Hello from Claude Desktop MCP!
+
+This file was created using Claude Desktop with GitHub MCP server integration.
+
+Features tested:
+- ✅ File creation in specific branch
+- ✅ Commit with custom message  
+- ✅ Branch operations
+- ✅ Ready for merge to main
+
+Created on: $(date)
+Branch: hello
+Repository: backend_FYP
